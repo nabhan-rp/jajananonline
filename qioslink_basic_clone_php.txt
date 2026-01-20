@@ -1,0 +1,58 @@
+<?php
+
+if (!defined("WHMCS")) {
+    die("This file cannot be accessed directly");
+}
+
+/*
+ * MODULE NAME: qioslink
+ * FILE NAME: qioslink.php
+ * COMPATIBILITY: WHMCS 8.x (PHP 8.1)
+ */
+
+function qioslink_config() {
+    return array(
+        // FriendlyName WAJIB TYPE SYSTEM
+        "FriendlyName" => array(
+            "Type" => "System",
+            "Value" => "QiosLink QRIS (Nobu)",
+        ),
+        // Input API URL
+        "apiUrl" => array(
+            "FriendlyName" => "API URL",
+            "Type" => "text",
+            "Size" => "50",
+            "Default" => "https://bayar.jajanan.online/api/create_payment.php",
+            "Description" => "Link ke file create_payment.php",
+        ),
+        // Input Merchant ID
+        "merchantId" => array(
+            "FriendlyName" => "Merchant ID",
+            "Type" => "text",
+            "Size" => "20",
+            "Description" => "Masukkan ID Merchant",
+        ),
+        // Input API Key
+        "apiKey" => array(
+            "FriendlyName" => "Secret Key",
+            "Type" => "password",
+            "Size" => "30",
+        ),
+    );
+}
+
+function qioslink_link($params) {
+    // Ambil variabel
+    $invoiceId = $params['invoiceid'];
+    $amount = $params['amount'];
+
+    // Output HTML Sederhana (Tanpa Logic Curl dulu untuk tes muncul/tidak)
+    $code = '<p>Metode Pembayaran: QiosLink QRIS</p>';
+    $code .= '<p>Invoice ID: ' . $invoiceId . '</p>';
+    $code .= '<p>Total: ' . $amount . '</p>';
+    $code .= '<div class="alert alert-info">Modul Berhasil Terload! Silakan update kode qioslink_link dengan logic cURL setelah ini.</div>';
+
+    return $code;
+}
+
+?>

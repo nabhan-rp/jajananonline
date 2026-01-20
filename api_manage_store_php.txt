@@ -1,0 +1,77 @@
+<?php
+// FILE: api/manage_store.php
+require 'db_connect.php';
+
+$input = json_decode(file_get_contents("php://input"), true);
+$action = isset($_GET['action']) ? $_GET['action'] : ($input['action'] ?? 'list');
+
+try {
+    // LIST PRODUCTS
+    if ($action === 'list') {
+        $userId = $_GET['user_id'] ?? 0;
+        
+        // Fetch Products
+        $stmt = $conn->prepare("SELECT * FROM products WHERE user_id = ? ORDER BY id DESC");
+        $stmt->bind_param("i", $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $products = [];
+        
+        while ($row = $res->fetch_assoc()) {
+            $row['isActive'] = $row['is_active'] == 1;
+            
+            // Get Rating Info
+            $rateSql = "SELECT AVG(rating) as avg_rating, COUNT(*) as count FROM reviews WHERE product_id = " . $row['id'];
+            $rateRes = $conn->query($rateSql)->fetch_assoc();
+            $row['rating'] = number_format((float)$rateRes['avg_rating'], 1);
+            $row['reviewCount'] = $rateRes['count'];
+
+            $products[] = $row;
+        }
+        echo json_encode(['success' => true, 'products' => $products]);
+    }
+
+    // SAVE PRODUCT
+    if ($action === 'save') {
+        $id = $input['id'] ?? null;
+        $userId = $input['userId'];
+        $name = $conn->real_escape_string($input['name']);
+        $price = $input['price'];
+        $type = $input['type']; // physical, digital_static, digital_license
+        $desc = $conn->real_escape_string($input['description'] ?? '');
+        $digitalContent = $conn->real_escape_string($input['digitalContent'] ?? ''); // Link for static
+        $weight = $input['weight'] ?? 0;
+        $active = isset($input['isActive']) && $input['isActive'] ? 1 : 1;
+        
+        $newLicenses = $input['licenses'] ?? []; // Array of strings
+
+        if ($id) {
+            $stmt = $conn->prepare("UPDATE products SET name=?, price=?, type=?, description=?, digital_content=?, weight=?, is_active=? WHERE id=? AND user_id=?");
+            $stmt->bind_param("sdisssiii", $name, $price, $type, $desc, $digitalContent, $weight, $active, $id, $userId);
+            $stmt->execute();
+            $productId = $id;
+        } else {
+            $stmt = $conn->prepare("INSERT INTO products (user_id, name, price, type, description, digital_content, weight, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("isdisssi", $userId, $name, $price, $type, $desc, $digitalContent, $weight, $active);
+            $stmt->execute();
+            $productId = $stmt->insert_id;
+        }
+
+        // Handle Licenses Inventory Insert
+        if ($type === 'digital_license' && !empty($newLicenses)) {
+            $licStmt = $conn->prepare("INSERT INTO product_licenses (product_id, license_key, status) VALUES (?, ?, 'available')");
+            foreach ($newLicenses as $key) {
+                if(trim($key) !== '') {
+                    $cleanKey = $conn->real_escape_string(trim($key));
+                    $licStmt->bind_param("is", $productId, $cleanKey);
+                    $licStmt->execute();
+                }
+            }
+        }
+
+        echo json_encode(['success' => true]);
+    }
+} catch (Exception $e) {
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+}
+?>

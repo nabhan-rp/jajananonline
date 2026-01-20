@@ -1,0 +1,77 @@
+<?php
+// =============================================================================
+// CALLBACK HANDLER UNTUK QIOSPAY (Shared Hosting)
+// =============================================================================
+// Simpan file ini dengan nama: callback.php
+// Upload ke folder public_html di hosting Anda.
+// URL file ini (misal: https://domain-anda.com/callback.php) yang dicopy ke Dashboard Qiospay.
+// =============================================================================
+
+// 1. Koneksi Database
+$host = "localhost";
+$username = "db_user_anda";     // Ganti dengan User Database cPanel
+$password = "db_password_anda"; // Ganti dengan Password Database cPanel
+$dbname = "db_name_anda";       // Ganti dengan Nama Database cPanel
+
+$conn = new mysqli($host, $username, $password, $dbname);
+if ($conn->connect_error) {
+    // Log error jika koneksi gagal (opsional: simpan ke file log)
+    error_log("Connection failed: " . $conn->connect_error);
+    die("Connection failed");
+}
+
+// 2. Menerima Data JSON dari Qiospay
+$input = file_get_contents("php://input");
+$data = json_decode($input);
+
+// Log data masuk untuk debugging (cek file webhook_log.txt di hosting nanti)
+file_put_contents('webhook_log.txt', date('Y-m-d H:i:s') . " - Received: " . $input . "\n", FILE_APPEND);
+
+// 3. Validasi Data
+// Qiospay biasanya mengirimkan data seperti: { "status": "success", "amount": 10000, "ref_id": "...", "buyer_phone": "..." }
+// Pastikan sesuaikan parameter dengan dokumentasi real Qiospay.
+
+if(isset($data->status) && $data->status == 'success') {
+    
+    $amount_paid = $data->amount;
+    
+    // 4. Logika Pencocokan Transaksi
+    // Karena QRIS Dinamis Static String (sistem Nobu via Qiospay) seringkali berbasis Amount unik,
+    // Kita cari transaksi di database kita yang:
+    // a. Statusnya masih 'pending'
+    // b. Nominalnya sama persis dengan yang dibayar
+    // c. (Opsional) Dibuat dalam 1 jam terakhir untuk menghindari salah update transaksi lama.
+
+    $sql = "SELECT id FROM transactions WHERE amount = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1";
+    
+    if($stmt = $conn->prepare($sql)) {
+        $stmt->bind_param("i", $amount_paid);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if($result->num_rows > 0) {
+            // Transaksi Ditemukan!
+            $row = $result->fetch_assoc();
+            $trx_id_internal = $row['id'];
+            
+            // 5. Update Status Jadi 'paid'
+            $update_sql = "UPDATE transactions SET status = 'paid' WHERE id = ?";
+            if($update_stmt = $conn->prepare($update_sql)) {
+                $update_stmt->bind_param("i", $trx_id_internal);
+                $update_stmt->execute();
+                
+                echo json_encode(["status" => "success", "message" => "Transaction ID $trx_id_internal updated to PAID"]);
+            }
+        } else {
+            // Tidak ada transaksi pending dengan nominal tersebut
+            // Ini bisa terjadi jika user salah bayar nominal, atau transaksi sudah expired/paid.
+            echo json_encode(["status" => "ignored", "message" => "No matching PENDING transaction found for amount $amount_paid"]);
+        }
+        $stmt->close();
+    }
+} else {
+    echo json_encode(["status" => "failed", "message" => "Invalid data or status not success"]);
+}
+
+$conn->close();
+?>

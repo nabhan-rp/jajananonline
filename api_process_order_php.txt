@@ -1,0 +1,99 @@
+<?php
+// FILE: api/process_order.php
+require 'db_connect.php';
+require 'qris_utils.php';
+
+$input = json_decode(file_get_contents("php://input"), true);
+$action = isset($_GET['action']) ? $_GET['action'] : ($input['action'] ?? 'create');
+
+if ($action === 'create' && isset($input['product_id'])) {
+    $prodId = (int)$input['product_id'];
+    $custEmail = $conn->real_escape_string($input['customer_email']);
+    $custName = $conn->real_escape_string($input['customer_name'] ?? 'Guest');
+    $shippingAddr = $conn->real_escape_string($input['shipping_address'] ?? '');
+
+    // 1. Get Product
+    $stmt = $conn->prepare("SELECT p.*, u.merchant_config FROM products p JOIN users u ON p.user_id = u.id WHERE p.id = ? AND p.is_active = 1");
+    $stmt->bind_param("i", $prodId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    if ($res->num_rows > 0) {
+        $product = $res->fetch_assoc();
+        $merchantConfig = json_decode($product['merchant_config'], true);
+        
+        $totalAmount = $product['price']; // Add shipping cost logic here if needed
+        $uniqueCode = rand(1, 499);
+        $finalAmount = $totalAmount + $uniqueCode;
+        
+        // CHECK LICENSE AVAILABILITY
+        $assignedLicenseId = null;
+        if ($product['type'] === 'digital_license') {
+            // Lock a random available license
+            $licSql = "SELECT id FROM product_licenses WHERE product_id = $prodId AND status = 'available' LIMIT 1 FOR UPDATE";
+            $licRes = $conn->query($licSql);
+            if ($licRes->num_rows == 0) {
+                echo json_encode(['success' => false, 'message' => 'Stok Lisensi Habis!']);
+                exit;
+            }
+            $licRow = $licRes->fetch_assoc();
+            $assignedLicenseId = $licRow['id'];
+            // Temporarily mark as locked (optional complex logic, simplified here to 'locked' or keep available until paid)
+            // For simple system: We allocate ONLY AFTER payment. 
+            // BUT to prevent overselling, strict systems allocate now. 
+            // Here we assume high availability or handle conflict on callback.
+        }
+
+        // Generate QR
+        $qrString = generateDynamicQR($merchantConfig['qrisString'], $finalAmount);
+        $trx_id = "JO-" . time() . rand(100, 999);
+        $payment_token = bin2hex(random_bytes(16));
+
+        // Insert Order
+        $ins = $conn->prepare("
+            INSERT INTO orders (trx_id, product_id, customer_name, customer_email, amount, status, payment_token, shipping_address) 
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+        ");
+        $ins->bind_param("sisdiss", $trx_id, $prodId, $custName, $custEmail, $finalAmount, $payment_token, $shippingAddr);
+        
+        if ($ins->execute()) {
+            echo json_encode([
+                'success' => true,
+                'qr_string' => $qrString,
+                'amount' => $finalAmount,
+                'payment_url' => './?pay=' . $payment_token
+            ]);
+        }
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Product unavailable']);
+    }
+}
+
+if ($action === 'history') {
+    $userId = $_GET['user_id'];
+    $role = $_GET['role'];
+    
+    // If merchant, show orders of their products. If user, show orders they made (by email match).
+    if ($role === 'merchant' || $role === 'superadmin') {
+        $sql = "SELECT o.*, p.name as productName FROM orders o JOIN products p ON o.product_id = p.id WHERE p.user_id = ? ORDER BY o.id DESC";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $userId);
+    } else {
+        // For 'user' role, we ideally match by User ID if logged in. 
+        // Assuming we store user_id in orders now or match by email.
+        // For simplicity, let's assume we pass customer_email from frontend session.
+        $email = $_GET['email'] ?? ''; 
+        $sql = "SELECT o.*, p.name as productName FROM orders o JOIN products p ON o.product_id = p.id WHERE o.customer_email = (SELECT email FROM users WHERE id=?) ORDER BY o.id DESC";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $userId);
+    }
+    
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $orders = [];
+    while($row = $res->fetch_assoc()) {
+        $orders[] = $row;
+    }
+    echo json_encode(['success'=>true, 'orders'=>$orders]);
+}
+?>

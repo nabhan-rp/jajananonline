@@ -1,0 +1,35 @@
+<?php
+// FILE DEBUGGING KHUSUS
+// Rename jadi: qioslink_test.php
+// Upload ke: /modules/gateways/
+
+if (!defined("WHMCS")) die("This file cannot be accessed directly");
+
+function qioslink_test_MetaData()
+{
+    return array(
+        'DisplayName' => 'QiosLink DEBUG Mode',
+        'APIVersion' => '1.1',
+    );
+}
+
+function qioslink_test_config()
+{
+    return array(
+        'FriendlyName' => array(
+            'Type' => 'System',
+            'Value' => 'QiosLink DEBUG Mode',
+        ),
+        'testField' => array(
+            'FriendlyName' => 'Test Input',
+            'Type' => 'text',
+            'Size' => '25',
+        ),
+    );
+}
+
+function qioslink_test_link($params)
+{
+    return '<p>Module Loaded Successfully</p>';
+}
+?>

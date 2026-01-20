@@ -1,0 +1,73 @@
+<?php
+// FILE: callback.php
+require 'api/db_connect.php';
+
+$input = file_get_contents("php://input");
+$data = json_decode($input);
+
+if(isset($data->status) && $data->status == 'success') {
+    $amount_paid = $data->amount;
+    
+    // Find Pending Transaction
+    $sql = "SELECT t.id, t.trx_id, o.id as order_id, o.product_id, p.type, p.digital_content 
+            FROM transactions t
+            JOIN orders o ON t.trx_id = o.trx_id
+            JOIN products p ON o.product_id = p.id
+            WHERE t.amount = ? AND t.status = 'pending' 
+            ORDER BY t.created_at DESC LIMIT 1";
+            
+    if($stmt = $conn->prepare($sql)) {
+        $stmt->bind_param("i", $amount_paid);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if($result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            $trxId = $row['id'];
+            $orderId = $row['order_id'];
+            $prodId = $row['product_id'];
+            $prodType = $row['type'];
+            
+            // 1. Update Transaction & Order Status
+            $conn->query("UPDATE transactions SET status = 'paid' WHERE id = $trxId");
+            $conn->query("UPDATE orders SET status = 'paid' WHERE id = $orderId");
+            
+            // 2. PRODUCT DELIVERY LOGIC
+            $deliveredContent = "";
+            
+            if ($prodType === 'digital_static') {
+                $deliveredContent = $row['digital_content']; // Static Link
+            } 
+            elseif ($prodType === 'digital_license') {
+                // Fetch ONE available license
+                $licRes = $conn->query("SELECT id, license_key FROM product_licenses WHERE product_id = $prodId AND status = 'available' LIMIT 1 FOR UPDATE");
+                if ($licRes->num_rows > 0) {
+                    $licData = $licRes->fetch_assoc();
+                    $licenseKey = $licData['license_key'];
+                    $licId = $licData['id'];
+                    
+                    // Mark as SOLD
+                    $conn->query("UPDATE product_licenses SET status = 'sold', order_id = $orderId WHERE id = $licId");
+                    $deliveredContent = "Serial Key: " . $licenseKey;
+                } else {
+                    $deliveredContent = "Stok Kosong. Hubungi Admin.";
+                }
+            }
+            elseif ($prodType === 'physical') {
+                $deliveredContent = "Menunggu Pengiriman.";
+            }
+            
+            // Save content to Order (so user can view it in dashboard)
+            $safeContent = $conn->real_escape_string($deliveredContent);
+            $conn->query("UPDATE orders SET delivered_content = '$safeContent' WHERE id = $orderId");
+            
+            // 3. Send Email (Optional SMTP Logic Here)
+            // ...
+            
+            echo json_encode(["status" => "success"]);
+        } else {
+            echo json_encode(["status" => "ignored"]);
+        }
+    }
+}
+?>

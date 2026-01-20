@@ -1,0 +1,54 @@
+<?php
+// =============================================================================
+// FORCE ACTIVATE GATEWAY MODULE
+// =============================================================================
+// Gunakan script ini jika modul tidak muncul di list WHMCS
+// =============================================================================
+
+require("init.php");
+
+use Illuminate\Database\Capsule\Manager as Capsule;
+
+$gatewayName = "qiosgateway";
+$friendlyName = "QiosGateway QRIS (Nobu)";
+
+echo "<h2>WHMCS Gateway Force Activator</h2>";
+
+try {
+    // 1. Cek apakah sudah ada di database
+    $check = Capsule::table('tblpaymentgateways')
+        ->where('gateway', $gatewayName)
+        ->first();
+
+    if ($check) {
+        echo "<p style='color:orange'>Modul <b>$gatewayName</b> sudah ada di database. Mencoba reset konfigurasi...</p>";
+        // Opsional: Hapus setting lama biar fresh
+        // Capsule::table('tblpaymentgateways')->where('gateway', $gatewayName)->delete();
+    } else {
+        echo "<p>Mengaktifkan modul <b>$gatewayName</b>...</p>";
+        
+        // 2. Masukkan Setting Default (Wajib agar dianggap aktif)
+        $settings = [
+            ['gateway' => $gatewayName, 'setting' => 'name', 'value' => $friendlyName],
+            ['gateway' => $gatewayName, 'setting' => 'visible', 'value' => 'on'],
+            ['gateway' => $gatewayName, 'setting' => 'apiUrl', 'value' => 'https://bayar.jajanan.online/api/create_payment.php'],
+            ['gateway' => $gatewayName, 'setting' => 'merchantId', 'value' => '1'],
+            ['gateway' => $gatewayName, 'setting' => 'apiKey', 'value' => '']
+        ];
+
+        foreach ($settings as $s) {
+            Capsule::table('tblpaymentgateways')->insert($s);
+        }
+        
+        echo "<p style='color:green'><strong>SUKSES!</strong> Modul berhasil diinject ke database.</p>";
+    }
+    
+    echo "<hr>";
+    echo "<p>Silakan login ke Admin WHMCS -> System Settings -> Payment Gateways.</p>";
+    echo "<p>Seharusnya modul <b>$friendlyName</b> sudah aktif (hijau).</p>";
+    echo "<p style='color:red'>PENTING: Segera hapus file force_activate.php ini!</p>";
+
+} catch (Exception $e) {
+    echo "<p style='color:red'>Error: " . $e->getMessage() . "</p>";
+}
+?>

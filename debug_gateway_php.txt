@@ -1,0 +1,62 @@
+<?php
+// RENAME FILE INI JADI: cek_syntax.php
+// UPLOAD KE FOLDER: /modules/gateways/
+// BUKA DI BROWSER: https://domain-whmcs-anda.com/modules/gateways/cek_syntax.php
+
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+echo "<h1>WHMCS Gateway Syntax Checker</h1>";
+echo "PHP Version: " . phpversion() . "<br><hr>";
+
+$module_file = 'qioslink.php';
+
+// 1. Cek Keberadaan File
+if (!file_exists(__DIR__ . '/' . $module_file)) {
+    die("<h3 style='color:red'>ERROR: File $module_file tidak ditemukan di folder ini!</h3>Pastikan nama file huruf kecil semua.");
+}
+echo "<p style='color:green'>✔ File $module_file ditemukan.</p>";
+
+// 2. Cek Permission
+$perms = substr(sprintf('%o', fileperms(__DIR__ . '/' . $module_file)), -4);
+echo "<p>File Permission: <strong>$perms</strong> (Harusnya 0644)</p>";
+
+// 3. Cek Syntax PHP (Linting)
+$output = shell_exec("php -l " . __DIR__ . '/' . $module_file);
+echo "<strong>Syntax Check Result:</strong><pre>$output</pre>";
+
+// 4. Simulasi Load WHMCS Constant
+if (!defined("WHMCS")) define("WHMCS", true);
+
+// 5. Coba Include File
+echo "<strong>Attempting to include file...</strong><br>";
+try {
+    include_once(__DIR__ . '/' . $module_file);
+    echo "<p style='color:green'>✔ Include Berhasil! Tidak ada Fatal Error.</p>";
+    
+    // 6. Cek Keberadaan Fungsi Wajib
+    $funcs_to_check = ['qioslink_config', 'qioslink_link'];
+    foreach ($funcs_to_check as $f) {
+        if (function_exists($f)) {
+            echo "<p style='color:green'>✔ Fungsi <code>$f</code> ditemukan.</p>";
+            
+            if ($f == 'qioslink_config') {
+                $conf = $f();
+                if (is_array($conf)) {
+                    echo "<p style='color:green'>✔ Fungsi Config mengembalikan Array valid.</p>";
+                    echo "<pre>" . print_r($conf, true) . "</pre>";
+                } else {
+                    echo "<p style='color:red'>✘ Fungsi Config TIDAK mengembalikan Array!</p>";
+                }
+            }
+        } else {
+            echo "<p style='color:red'>✘ Fungsi <code>$f</code> TIDAK ditemukan! Cek penulisan nama fungsi.</p>";
+        }
+    }
+    
+} catch (Throwable $e) {
+    echo "<h3 style='color:red'>CRITICAL ERROR SAAT INCLUDE:</h3>";
+    echo $e->getMessage();
+}
+?>

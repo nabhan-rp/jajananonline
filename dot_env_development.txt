@@ -1,0 +1,5 @@
+# Development Mode (npm run dev)
+# Mode ini menggunakan Mock Data (LocalStorage), tidak butuh PHP/Database.
+
+VITE_USE_DEMO_DATA=true
+VITE_API_BASE_URL=./api

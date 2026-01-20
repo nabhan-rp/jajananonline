@@ -1,0 +1,167 @@
+
+================================================================================
+QiosLink - WHMCS Payment Gateway Module (Updated with API Key)
+================================================================================
+
+INSTRUKSI INSTALASI WHMCS:
+1. Buat folder `qioslink` di dalam direktori WHMCS Anda: `/modules/gateways/`.
+2. Buat file `qioslink.php` di dalam `/modules/gateways/`.
+3. Buat file `qioslink.php` (lagi) di dalam `/modules/gateways/callback/`.
+
+--------------------------------------------------------------------------------
+FILE 1: /modules/gateways/qioslink.php
+--------------------------------------------------------------------------------
+<?php
+if (!defined("WHMCS")) {
+    die("This file cannot be accessed directly");
+}
+
+function qioslink_MetaData()
+{
+    return array(
+        'DisplayName' => 'QiosLink QRIS',
+        'APIVersion' => '1.1',
+        'DisableLocalCreditCardInput' => true,
+        'TokenisedStorage' => false,
+    );
+}
+
+function qioslink_config()
+{
+    return array(
+        'FriendlyName' => array(
+            'Type' => 'System',
+            'Value' => 'QiosLink QRIS (Nobu)',
+        ),
+        'apiUrl' => array(
+            'FriendlyName' => 'API URL',
+            'Type' => 'text',
+            'Size' => '50',
+            'Default' => 'https://domain-anda.com/api/create_payment.php',
+            'Description' => 'URL ke file create_payment.php di server QiosLink Anda',
+        ),
+        'merchantId' => array(
+            'FriendlyName' => 'Merchant ID (User ID)',
+            'Type' => 'text',
+            'Size' => '10',
+            'Description' => 'ID User Anda di database QiosLink (misal: 1)',
+        ),
+        'apiKey' => array(
+            'FriendlyName' => 'API Key',
+            'Type' => 'password',
+            'Size' => '30',
+            'Description' => 'API Key Anda dari Dashboard QiosLink (Optional but Recommended)',
+        ),
+    );
+}
+
+function qioslink_link($params)
+{
+    // Gateway Configuration Parameters
+    $apiUrl = $params['apiUrl'];
+    $merchantId = $params['merchantId'];
+    $apiKey = $params['apiKey'];
+
+    // Invoice Parameters
+    $invoiceId = $params['invoiceid'];
+    $description = $params["description"];
+    $amount = $params['amount'];
+    $currencyCode = $params['currency'];
+
+    // System Parameters
+    $systemUrl = $params['systemurl'];
+    $moduleName = $params['paymentmethod'];
+    
+    // URL Callback WHMCS yang akan dikirim ke QiosLink
+    $callbackUrl = $systemUrl . 'modules/gateways/callback/' . $moduleName . '.php';
+
+    // 1. Request QR String ke API QiosLink
+    $postData = json_encode([
+        'merchant_id' => $merchantId,
+        'api_key' => $apiKey, // Sending API Key
+        'amount' => $amount,
+        'description' => 'Invoice #' . $invoiceId,
+        'external_id' => $invoiceId,
+        'callback_url' => $callbackUrl
+    ]);
+
+    $ch = curl_init($apiUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    $json = json_decode($response);
+
+    if (isset($json->success) && $json->success == true) {
+        $qrString = $json->qr_string;
+        
+        $imgUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" . urlencode($qrString);
+        
+        $htmlOutput = '<div style="text-align:center; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">';
+        $htmlOutput .= '<h3>Scan QRIS to Pay</h3>';
+        $htmlOutput .= '<img src="'.$imgUrl.'" alt="QRIS Code" style="max-width:250px; margin-bottom:15px;"/>';
+        $htmlOutput .= '<p>Total: <strong>Rp '.number_format($amount,0,',','.').'</strong></p>';
+        $htmlOutput .= '<p style="font-size:0.8em; color: #666;">Silakan scan menggunakan GoPay, OVO, Dana, dll.</p>';
+        $htmlOutput .= '<p style="font-size:0.8em; color: #888;">Refresh halaman ini setelah membayar.</p>';
+        $htmlOutput .= '</div>';
+        
+        return $htmlOutput;
+    } else {
+        return '<div class="alert alert-danger">Error generating QRIS: ' . ($json->message ?? 'Unknown error') . '</div>';
+    }
+}
+?>
+
+--------------------------------------------------------------------------------
+FILE 2: /modules/gateways/callback/qioslink.php
+--------------------------------------------------------------------------------
+<?php
+// Require libraries needed for gateway module functions.
+require_once __DIR__ . '/../../../init.php';
+require_once __DIR__ . '/../../../includes/gatewayfunctions.php';
+require_once __DIR__ . '/../../../includes/invoicefunctions.php';
+
+// Detect module name from filename.
+$gatewayModuleName = basename(__FILE__, '.php');
+
+// Fetch gateway configuration parameters.
+$gatewayParams = getGatewayVariables($gatewayModuleName);
+
+// Die if module is not active.
+if (!$gatewayParams['type']) {
+    die("Module Not Activated");
+}
+
+// Menerima Data POST dari QiosLink (Forwarder)
+$status = $_POST['status'];
+$invoiceId = $_POST['external_id'];
+$amount = $_POST['amount'];
+$trxId = $_POST['trx_id'];
+
+// Validasi Invoice ID
+$invoiceId = checkCbInvoiceID($invoiceId, $gatewayParams['name']);
+
+// Cek apakah invoice sudah dibayar sebelumnya
+checkCbTransID($trxId); // Checks transaction ID log
+
+if ($status == 'paid') {
+    // Tambahkan Pembayaran ke Invoice WHMCS
+    addInvoicePayment(
+        $invoiceId,
+        $trxId,
+        $amount,
+        0, // Fees
+        $gatewayModuleName
+    );
+    
+    // Log Activity
+    logTransaction($gatewayParams['name'], $_POST, 'Successful');
+    echo "OK";
+} else {
+    logTransaction($gatewayParams['name'], $_POST, 'Unsuccessful');
+    echo "Failed";
+}
+?>

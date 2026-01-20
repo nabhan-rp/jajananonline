@@ -1,0 +1,129 @@
+<?php
+// =============================================================================
+// QIOSLINK QRIS GATEWAY - PRODUCTION FIX (PHP 8.x COMPATIBLE)
+// =============================================================================
+// Rename menjadi: qioslink.php
+// Upload ke: /modules/gateways/
+// =============================================================================
+
+if (!defined("WHMCS")) {
+    die("This file cannot be accessed directly");
+}
+
+function qioslink_MetaData()
+{
+    return array(
+        'DisplayName' => 'QiosLink QRIS (Nobu)',
+        'APIVersion' => '1.1',
+        'DisableLocalCreditCardInput' => true,
+        'TokenisedStorage' => false,
+    );
+}
+
+function qioslink_config()
+{
+    return array(
+        'FriendlyName' => array(
+            'Type' => 'System',
+            'Value' => 'QiosLink QRIS (Nobu)',
+        ),
+        'apiUrl' => array(
+            'FriendlyName' => 'API URL',
+            'Type' => 'text',
+            'Size' => '50',
+            'Default' => 'https://bayar.jajanan.online/api/create_payment.php',
+            'Description' => 'Link ke file create_payment.php',
+        ),
+        'merchantId' => array(
+            'FriendlyName' => 'Merchant ID',
+            'Type' => 'text',
+            'Size' => '10',
+            'Description' => 'ID User (Angka)',
+        ),
+        'apiKey' => array(
+            'FriendlyName' => 'Secret Key',
+            'Type' => 'password',
+            'Size' => '30',
+        ),
+    );
+}
+
+function qioslink_link($params)
+{
+    // Pastikan parameter ada untuk mencegah error PHP 8
+    $apiUrl = isset($params['apiUrl']) ? $params['apiUrl'] : '';
+    $merchantId = isset($params['merchantId']) ? $params['merchantId'] : '';
+    $apiKey = isset($params['apiKey']) ? $params['apiKey'] : '';
+    $invoiceId = isset($params['invoiceid']) ? $params['invoiceid'] : '0';
+    $amount = isset($params['amount']) ? $params['amount'] : '0';
+    
+    // URL Callback Builder
+    $systemUrl = isset($params['systemurl']) ? $params['systemurl'] : '';
+    $moduleName = isset($params['paymentmethod']) ? $params['paymentmethod'] : 'qioslink';
+    
+    // Pastikan systemUrl diakhiri slash
+    if (substr($systemUrl, -1) !== '/') {
+        $systemUrl .= '/';
+    }
+    $callbackUrl = $systemUrl . 'modules/gateways/callback/' . $moduleName . '.php';
+
+    // Payload
+    $payload = [
+        'merchant_id' => $merchantId,
+        'api_key' => $apiKey,
+        'amount' => $amount,
+        'description' => 'Invoice #' . $invoiceId,
+        'external_id' => $invoiceId,
+        'callback_url' => $callbackUrl,
+        'expiry_minutes' => 60
+    ];
+
+    // Cek Curl
+    if (!function_exists('curl_init')) {
+        return '<div class="alert alert-danger">Error: cURL PHP extension is missing.</div>';
+    }
+
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $apiUrl);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+    
+    $response = curl_exec($ch);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($curlError) {
+        return '<div class="alert alert-danger">Connection Error: '.$curlError.'</div>';
+    }
+
+    $json = json_decode($response);
+
+    // Strict Check
+    if (is_object($json) && isset($json->success) && $json->success === true) {
+        $qrString = isset($json->qr_string) ? $json->qr_string : '';
+        if (empty($qrString)) return '<div class="alert alert-warning">QR String Empty</div>';
+
+        $imgUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" . urlencode($qrString);
+        
+        return '
+        <div style="text-align:center; padding: 20px; background:#fff; border:1px solid #ddd; border-radius:10px; margin:10px 0;">
+            <h4 style="margin:0 0 15px 0;">Scan QRIS Nobu</h4>
+            <img src="'.$imgUrl.'" style="width:200px; height:200px; border:1px solid #ccc; padding:5px;" /><br>
+            <div style="margin-top:10px; font-weight:bold; font-size:16px;">Rp '.number_format($amount, 0, ',', '.').'</div>
+            <small style="color:grey;">Otomatis lunas setelah dibayar</small>
+        </div>
+        <script>
+        setTimeout(function(){ window.location.reload(); }, 15000);
+        </script>
+        ';
+    } else {
+        $msg = (is_object($json) && isset($json->message)) ? $json->message : 'Invalid API Response';
+        return '<div class="alert alert-danger">Gagal Load QRIS: '.$msg.'</div>';
+    }
+}
+?>

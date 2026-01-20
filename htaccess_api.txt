@@ -1,0 +1,11 @@
+
+# INSTRUKSI:
+# 1. Buat file bernama ".htaccess" (ada titik di depan) di dalam folder /api/
+# 2. Copy isi kode di bawah ini.
+
+Options -Indexes
+
+<Files *.php>
+    Order Allow,Deny
+    Allow from all
+</Files>

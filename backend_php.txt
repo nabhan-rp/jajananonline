@@ -1,0 +1,172 @@
+
+================================================================================
+QiosLink - PHP Backend (Enhanced for Integration)
+================================================================================
+
+UPDATE DATABASE DULU (PENTING):
+Jalankan perintah SQL ini di phpMyAdmin untuk menambah kolom callback eksternal:
+
+ALTER TABLE `transactions` ADD `external_ref_id` VARCHAR(100) NULL AFTER `trx_id`;
+ALTER TABLE `transactions` ADD `external_callback_url` TEXT NULL AFTER `status`;
+
+--------------------------------------------------------------------------------
+FILE: db_connect.php (Sama seperti sebelumnya)
+--------------------------------------------------------------------------------
+<?php
+$host = "localhost";
+$username = "your_db_user";
+$password = "your_db_password";
+$dbname = "your_db_name";
+
+$conn = new mysqli($host, $username, $password, $dbname);
+
+if ($conn->connect_error) {
+    die(json_encode(["error" => "Connection failed: " . $conn->connect_error]));
+}
+?>
+
+--------------------------------------------------------------------------------
+FILE: qris_utils.php (Sama seperti sebelumnya)
+--------------------------------------------------------------------------------
+<?php
+function crc16($data) {
+    $crc = 0xFFFF;
+    for ($i = 0; $i < strlen($data); $i++) {
+        $x = (($crc >> 8) ^ ord($data[$i])) & 0xFF;
+        $x ^= $x >> 4;
+        $crc = (($crc << 8) ^ ($x << 12) ^ ($x << 5) ^ $x) & 0xFFFF;
+    }
+    return strtoupper(str_pad(dechex($crc), 4, '0', STR_PAD_LEFT));
+}
+
+function formatField($tag, $value) {
+    $length = str_pad(strlen($value), 2, '0', STR_PAD_LEFT);
+    return $tag . $length . $value;
+}
+
+function generateDynamicQR($staticQr, $amount) {
+    $rawQr = $staticQr;
+    $crcPos = strrpos($rawQr, '6304');
+    if ($crcPos !== false) {
+        $rawQr = substr($rawQr, 0, $crcPos);
+    }
+    $amountStr = floor($amount);
+    $amountField = formatField('54', $amountStr);
+    $payload = $rawQr . $amountField . '6304';
+    $crc = crc16($payload);
+    return $payload . $crc;
+}
+?>
+
+--------------------------------------------------------------------------------
+FILE: create_payment.php (Updated: Menerima callback_url dari WHMCS)
+--------------------------------------------------------------------------------
+<?php
+header("Access-Control-Allow-Origin: *");
+header("Content-Type: application/json; charset=UTF-8");
+require 'db_connect.php';
+require 'qris_utils.php';
+
+$data = json_decode(file_get_contents("php://input"));
+
+// Menerima parameter tambahan: callback_url dan external_id
+if(isset($data->amount) && isset($data->merchant_id)) {
+    
+    // 1. Ambil Config Merchant
+    $stmt = $conn->prepare("SELECT merchant_config FROM users WHERE id = ?");
+    $stmt->bind_param("i", $data->merchant_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    
+    if($res->num_rows > 0) {
+        $user = $res->fetch_assoc();
+        $config = json_decode($user['merchant_config']);
+        
+        // 2. Generate QR
+        $dynamicQR = generateDynamicQR($config->qrisString, $data->amount); // Pastikan key json sesuai 'qrisString'
+        
+        // 3. Siapkan Data Transaksi
+        $trx_id = "TRX-" . time() . rand(100,999);
+        $desc = isset($data->description) ? $data->description : 'Payment';
+        $ext_id = isset($data->external_id) ? $data->external_id : null; // ID Invoice WHMCS
+        $ext_cb = isset($data->callback_url) ? $data->callback_url : null; // URL Callback WHMCS
+        
+        // 4. Simpan ke Database
+        $insert = $conn->prepare("INSERT INTO transactions (trx_id, merchant_id, amount, description, status, qr_string, external_ref_id, external_callback_url) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)");
+        $insert->bind_param("siissss", $trx_id, $data->merchant_id, $data->amount, $desc, $dynamicQR, $ext_id, $ext_cb);
+        $insert->execute();
+
+        echo json_encode([
+            "success" => true,
+            "trx_id" => $trx_id,
+            "qr_string" => $dynamicQR,
+            "amount" => $data->amount
+        ]);
+    } else {
+        echo json_encode(["success" => false, "message" => "Merchant not found"]);
+    }
+} else {
+    echo json_encode(["success" => false, "message" => "Invalid Input"]);
+}
+?>
+
+--------------------------------------------------------------------------------
+FILE: callback.php (Updated: Forwarding ke WHMCS)
+--------------------------------------------------------------------------------
+<?php
+// Ini adalah file PUSAT yang menerima notifikasi dari Qiospay
+$input = file_get_contents("php://input");
+$data = json_decode($input);
+
+require 'db_connect.php';
+
+// Log incoming request
+file_put_contents('webhook_log.txt', date('Y-m-d H:i:s') . " - Qiospay Hit: " . $input . "\n", FILE_APPEND);
+
+if(isset($data->status) && $data->status == 'success') {
+    $amount_paid = $data->amount;
+    
+    // 1. Cari Transaksi PENDING dengan nominal yg sama
+    $sql = "SELECT id, trx_id, external_callback_url, external_ref_id FROM transactions WHERE amount = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1";
+    
+    if($stmt = $conn->prepare($sql)) {
+        $stmt->bind_param("i", $amount_paid);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if($result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            $internal_id = $row['id'];
+            
+            // 2. Update Status jadi PAID di database sendiri
+            $update = $conn->prepare("UPDATE transactions SET status = 'paid' WHERE id = ?");
+            $update->bind_param("i", $internal_id);
+            $update->execute();
+            
+            // 3. FORWARDING (RELAY) KE WHMCS/WooCommerce
+            // Jika transaksi ini punya URL Callback eksternal, kita tembak balik.
+            if (!empty($row['external_callback_url'])) {
+                
+                $forward_data = [
+                    'status' => 'paid',
+                    'trx_id' => $row['trx_id'],
+                    'external_id' => $row['external_ref_id'], // Invoice ID WHMCS
+                    'amount' => $amount_paid
+                ];
+                
+                $ch = curl_init($row['external_callback_url']);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($forward_data)); // Kirim sebagai POST form data
+                $response = curl_exec($ch);
+                curl_close($ch);
+                
+                file_put_contents('webhook_log.txt', date('Y-m-d H:i:s') . " - Forwarded to " . $row['external_callback_url'] . " | Resp: " . $response . "\n", FILE_APPEND);
+            }
+            
+            echo json_encode(["status" => "success", "message" => "Transaction updated and forwarded"]);
+        } else {
+            echo json_encode(["status" => "ignored", "message" => "No pending transaction match"]);
+        }
+    }
+}
+?>

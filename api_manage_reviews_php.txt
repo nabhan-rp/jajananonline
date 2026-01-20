@@ -1,0 +1,38 @@
+<?php
+// FILE: api/manage_reviews.php
+require 'db_connect.php';
+
+$input = json_decode(file_get_contents("php://input"), true);
+$action = $input['action'] ?? '';
+
+if ($action === 'add') {
+    $userId = $input['user_id'];
+    $prodId = $input['product_id'];
+    $orderId = $input['order_id'];
+    $rating = (int)$input['rating'];
+    $comment = $conn->real_escape_string($input['comment']);
+    
+    // Verify purchase
+    $check = $conn->query("SELECT id FROM orders WHERE id = $orderId AND status = 'paid'");
+    if($check->num_rows == 0) {
+        echo json_encode(['success'=>false, 'message'=>'Anda belum membeli produk ini/pembayaran belum selesai.']);
+        exit;
+    }
+    
+    // Check duplicate
+    $dup = $conn->query("SELECT id FROM reviews WHERE order_id = $orderId");
+    if($dup->num_rows > 0) {
+        echo json_encode(['success'=>false, 'message'=>'Anda sudah mereview pesanan ini.']);
+        exit;
+    }
+    
+    $stmt = $conn->prepare("INSERT INTO reviews (product_id, user_id, order_id, rating, comment) VALUES (?, ?, ?, ?, ?)");
+    $stmt->bind_param("iiiis", $prodId, $userId, $orderId, $rating, $comment);
+    
+    if($stmt->execute()) {
+        echo json_encode(['success'=>true]);
+    } else {
+        echo json_encode(['success'=>false, 'message'=>$conn->error]);
+    }
+}
+?>

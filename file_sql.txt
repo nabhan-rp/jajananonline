@@ -1,0 +1,45 @@
+
+-- =============================================================================
+-- DATABASE SCHEMA (UPDATE V4.0 - VERIFICATION & GROUPS)
+-- Rename file ini menjadi "database.sql" sebelum import.
+-- =============================================================================
+
+-- 1. Buat Tabel Users (Updated)
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `username` varchar(50) NOT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `password` varchar(255) NOT NULL,
+  `role` enum('superadmin','merchant','cs','user') NOT NULL DEFAULT 'user',
+  `merchant_config` text, -- Disini data Branding disimpan (JSON)
+  `creator_id` int(11) DEFAULT 1, -- ID User yang membuat akun ini (Grouping)
+  `is_verified` tinyint(1) DEFAULT 1, -- 1=Verified, 0=Unverified
+  `verification_code` varchar(6) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `username` (`username`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 2. Buat Tabel Transactions (UPDATED)
+CREATE TABLE IF NOT EXISTS `transactions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `trx_id` varchar(50) NOT NULL,
+  `merchant_id` int(11) NOT NULL,
+  `amount` decimal(15,2) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `status` enum('pending','paid','expired','cancelled') NOT NULL DEFAULT 'pending',
+  `qr_string` text,
+  `payment_token` varchar(64) DEFAULT NULL, -- Token Unik (Hash) untuk Link
+  `payment_url` text DEFAULT NULL,          -- Full URL Link
+  `expires_at` datetime DEFAULT NULL,       -- Waktu Kadaluarsa
+  `is_single_use` tinyint(1) DEFAULT 0,     -- 1 = Link hangus setelah dibayar
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `external_ref_id` varchar(100) DEFAULT NULL,
+  `external_callback_url` text DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `trx_id` (`trx_id`),
+  UNIQUE KEY `payment_token` (`payment_token`) -- Index biar akses link cepat
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 3. Data Awal (Default Superadmin Verified)
+INSERT INTO `users` (`username`, `email`, `password`, `role`, `merchant_config`, `creator_id`, `is_verified`) VALUES
+('admin', 'admin@qioslink.com', 'admin', 'superadmin', '{"merchantName":"Narpra Digital","merchantCode":"QP040887","apiKey":"KEY123","qrisString":"00020101021126670016COM.NOBUBANK.WWW01189360050300000907180214905487390387780303UMI51440014ID.CO.QRIS.WWW0215ID20254619920700303UMI5204581753033605802ID5914Narpra Digital6009INDRAMAYU61054521162070703A016304D424"}', 0, 1);

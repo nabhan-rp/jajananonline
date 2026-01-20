@@ -1,0 +1,41 @@
+<?php
+// Pastikan tidak ada SPASI atau ENTER sebelum tag <?php di atas
+
+if (!defined("WHMCS")) {
+    die("This file cannot be accessed directly");
+}
+
+// Metadata Wajib untuk WHMCS 8.x
+function qioslink_MetaData()
+{
+    return array(
+        'DisplayName' => 'QiosLink QRIS (Nobu)',
+        'APIVersion' => '1.1', // Versi API Gateway
+        'DisableLocalCreditCardInput' => true,
+        'TokenisedStorage' => false,
+    );
+}
+
+// Config Wajib
+function qioslink_config()
+{
+    return array(
+        'FriendlyName' => array(
+            'Type' => 'System',
+            'Value' => 'QiosLink QRIS (Nobu)',
+        ),
+        'merchantId' => array(
+            'FriendlyName' => 'Merchant ID',
+            'Type' => 'text',
+            'Size' => '20',
+            'Description' => 'Masukkan ID Merchant',
+        ),
+    );
+}
+
+// Fungsi Link (Output HTML)
+function qioslink_link($params)
+{
+    return '<p>Modul QiosLink Berhasil Terload.</p>';
+}
+?>

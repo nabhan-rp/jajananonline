@@ -1,0 +1,9 @@
+
+FILE INI SUDAH DIPECAH MENJADI:
+1. backend_api_folder.txt (Isi folder api)
+2. backend_callback.txt (Isi file callback)
+3. backend_universal_bundle.txt (untuk setting universal SMTP, bukan php mailer bawaan)
+4. htaccess_api.txt
+5. htaccess_root.txt
+
+Silakan gunakan file-file tersebut.

@@ -1,0 +1,8 @@
+{
+  "name": "Jajanan Online SaaS - Link-in-Bio & Store",
+  "description": "Multi-tenant SaaS for online stores and bio links with automated Qiospay QRIS integration.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}

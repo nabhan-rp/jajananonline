@@ -1,0 +1,35 @@
+<?php
+// =============================================================================
+// FILE: register.php
+// Simpan di folder /api/
+// =============================================================================
+
+require 'db_connect.php';
+
+$input = json_decode(file_get_contents("php://input"), true);
+
+if(isset($input['username']) && isset($input['password'])) {
+    $username = $conn->real_escape_string($input['username']);
+    $password = $input['password']; // Di production gunakan password_hash()
+    $role = 'user'; // Default role for public registration
+    
+    // Cek duplicate
+    $check = $conn->query("SELECT id FROM users WHERE username = '$username'");
+    if($check->num_rows > 0) {
+        echo json_encode(['success' => false, 'message' => 'Username already exists']);
+        exit;
+    }
+    
+    // Insert
+    $stmt = $conn->prepare("INSERT INTO users (username, password, role) VALUES (?, ?, ?)");
+    $stmt->bind_param("sss", $username, $password, $role);
+    
+    if($stmt->execute()) {
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error']);
+    }
+} else {
+    echo json_encode(['success' => false, 'message' => 'Invalid input']);
+}
+?>

@@ -1,0 +1,168 @@
+
+================================================================================
+QiosLink - WooCommerce Payment Gateway Plugin (Updated with API Key)
+================================================================================
+
+INSTRUKSI:
+1. Buat folder `woo-qioslink` di dalam `/wp-content/plugins/`.
+2. Buat file `woo-qioslink.php` di dalam folder tersebut.
+3. Aktifkan plugin di WordPress Dashboard.
+
+--------------------------------------------------------------------------------
+FILE: /wp-content/plugins/woo-qioslink/woo-qioslink.php
+--------------------------------------------------------------------------------
+<?php
+/*
+Plugin Name: QiosLink QRIS Payment
+Description: QRIS Payment Gateway for WooCommerce using QiosLink Engine
+Version: 1.1
+Author: QiosLink Team
+*/
+
+if ( ! defined( 'ABSPATH' ) ) {
+    exit;
+}
+
+add_action( 'plugins_loaded', 'init_qioslink_gateway' );
+
+function init_qioslink_gateway() {
+    if ( ! class_exists( 'WC_Payment_Gateway' ) ) {
+        return;
+    }
+
+    class WC_Gateway_QiosLink extends WC_Payment_Gateway {
+
+        public function __construct() {
+            $this->id                 = 'qioslink';
+            $this->icon               = ''; // URL to icon if needed
+            $this->has_fields         = false;
+            $this->method_title       = 'QiosLink QRIS';
+            $this->method_description = 'Accept QRIS payments via QiosLink API.';
+
+            $this->init_form_fields();
+            $this->init_settings();
+
+            $this->title        = $this->get_option( 'title' );
+            $this->description  = $this->get_option( 'description' );
+            $this->api_url      = $this->get_option( 'api_url' );
+            $this->merchant_id  = $this->get_option( 'merchant_id' );
+            $this->api_key      = $this->get_option( 'api_key' );
+
+            add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
+            
+            // Webhook Handler: domain.com/wc-api/wc_gateway_qioslink
+            add_action( 'woocommerce_api_wc_gateway_qioslink', array( $this, 'webhook' ) );
+        }
+
+        public function init_form_fields() {
+            $this->form_fields = array(
+                'enabled' => array(
+                    'title'   => 'Enable/Disable',
+                    'type'    => 'checkbox',
+                    'label'   => 'Enable QiosLink QRIS Payment',
+                    'default' => 'yes'
+                ),
+                'title' => array(
+                    'title'       => 'Title',
+                    'type'        => 'text',
+                    'description' => 'This controls the title which the user sees during checkout.',
+                    'default'     => 'QRIS (All E-Wallet)',
+                ),
+                'api_url' => array(
+                    'title'       => 'API URL',
+                    'type'        => 'text',
+                    'default'     => 'https://domain-anda.com/api/create_payment.php',
+                ),
+                'merchant_id' => array(
+                    'title'       => 'Merchant ID',
+                    'type'        => 'text',
+                    'default'     => '1',
+                ),
+                'api_key' => array(
+                    'title'       => 'API Key',
+                    'type'        => 'password',
+                    'default'     => '',
+                ),
+            );
+        }
+
+        public function process_payment( $order_id ) {
+            $order = wc_get_order( $order_id );
+            
+            // Call API
+            $response = wp_remote_post( $this->api_url, array(
+                'body'    => json_encode( array(
+                    'merchant_id' => $this->merchant_id,
+                    'api_key'     => $this->api_key,
+                    'amount'      => $order->get_total(),
+                    'description' => 'Order #' . $order_id,
+                    'external_id' => $order_id,
+                    'callback_url'=> home_url( '/wc-api/wc_gateway_qioslink' )
+                ) ),
+                'headers' => array( 'Content-Type' => 'application/json' )
+            ) );
+
+            if ( is_wp_error( $response ) ) {
+                wc_add_notice( 'Connection error.', 'error' );
+                return;
+            }
+
+            $body = json_decode( wp_remote_retrieve_body( $response ) );
+
+            if ( isset( $body->success ) && $body->success ) {
+                // Store QR string
+                update_post_meta( $order_id, '_qioslink_qr_string', $body->qr_string );
+                $order->update_status( 'on-hold', 'Awaiting QRIS payment.' );
+                $order->reduce_order_stock();
+                WC()->cart->empty_cart();
+
+                return array(
+                    'result'   => 'success',
+                    'redirect' => $this->get_return_url( $order ),
+                );
+            } else {
+                wc_add_notice( 'Payment error: ' . ($body->message ?? 'Unknown'), 'error' );
+                return;
+            }
+        }
+        
+        // Handle Callback from QiosLink
+        public function webhook() {
+            if ( $_SERVER['REQUEST_METHOD'] != 'POST' ) {
+                exit;
+            }
+
+            $order_id = $_POST['external_id']; // Invoice ID from QiosLink
+            $status   = $_POST['status'];
+            
+            $order = wc_get_order( $order_id );
+            
+            if ( $order && $status == 'paid' ) {
+                $order->payment_complete( $_POST['trx_id'] );
+                $order->add_order_note( 'Payment received via QiosLink QRIS.' );
+                echo "OK";
+            } else {
+                echo "Failed";
+            }
+            exit;
+        }
+    }
+    
+    // Add QR Display to Thank You Page
+    add_action( 'woocommerce_thankyou_qioslink', 'qioslink_display_qr_thankyou', 10, 1 );
+    function qioslink_display_qr_thankyou( $order_id ) {
+        $qr_string = get_post_meta( $order_id, '_qioslink_qr_string', true );
+        if ( $qr_string ) {
+            echo '<h2>Scan to Pay</h2>';
+            echo '<img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data='.urlencode($qr_string).'" />';
+            echo '<p>Please scan the QRIS above to complete payment.</p>';
+        }
+    }
+}
+
+add_filter( 'woocommerce_payment_gateways', 'add_qioslink_gateway' );
+function add_qioslink_gateway( $gateways ) {
+    $gateways[] = 'WC_Gateway_QiosLink';
+    return $gateways;
+}
+?>

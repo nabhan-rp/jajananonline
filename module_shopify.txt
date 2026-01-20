@@ -1,0 +1,65 @@
+================================================================================
+QiosLink - Shopify Relay Bridge (Script Jembatan)
+================================================================================
+
+Script ini TIDAK diupload ke Shopify (karena tidak bisa).
+Script ini diupload ke hosting Anda (tempat QiosLink berada), misal diberi nama `shopify_relay.php`.
+
+Fungsinya: 
+1. Menerima notifikasi dari QiosLink bahwa pembayaran sukses.
+2. Mengirim perintah ke Shopify API untuk mengubah status order jadi PAID.
+
+--------------------------------------------------------------------------------
+FILE: shopify_relay.php
+--------------------------------------------------------------------------------
+<?php
+// Konfigurasi Shopify Anda
+$shop_url = "nama-toko-anda.myshopify.com"; // Ganti dengan domain myshopify Anda
+$access_token = "shpat_xxxxxxxxxxxxxxxx";    // Admin API Access Token dari Shopify Apps
+
+// Menerima Data POST dari QiosLink Forwarding
+// QiosLink mengirim: status, external_id (Order ID Shopify), amount, trx_id
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    
+    $status = $_POST['status'];
+    $order_id = $_POST['external_id']; // ID Order Shopify (Angka Panjang)
+    $amount = $_POST['amount'];
+    
+    if ($status == 'paid') {
+        
+        // 1. Siapkan Data Transaksi untuk Shopify
+        $data = [
+            "transaction" => [
+                "kind" => "capture",
+                "status" => "success",
+                "amount" => $amount,
+                "gateway" => "manual" // Karena kita pakai Manual Payment
+            ]
+        ];
+
+        // 2. Tembak API Shopify
+        // Endpoint: /admin/api/2023-10/orders/{order_id}/transactions.json
+        $url = "https://" . $shop_url . "/admin/api/2023-10/orders/" . $order_id . "/transactions.json";
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "X-Shopify-Access-Token: " . $access_token,
+            "Content-Type: application/json"
+        ]);
+        
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        // Log Hasilnya
+        file_put_contents('shopify_log.txt', date('Y-m-d H:i:s') . " - Order $order_id Updated. Code: $http_code. Resp: $response\n", FILE_APPEND);
+        
+        echo "OK, Shopify Updated";
+    } else {
+        echo "Status not paid";
+    }
+}
+?>

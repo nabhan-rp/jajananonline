@@ -1,0 +1,82 @@
+
+================================================================================
+QiosLink - SMTP Backend Implementation Guide
+================================================================================
+
+Untuk mengaktifkan fitur kirim email, Anda memerlukan library PHPMailer.
+Karena hosting shared hosting biasanya tidak memiliki Composer, Anda bisa mendownloadnya manual.
+
+LANGKAH 1: DOWNLOAD PHPMAILER
+1. Download PHPMailer dari: https://github.com/PHPMailer/PHPMailer
+2. Ambil folder `src` dan upload ke hosting Anda di dalam folder `/api/PHPMailer/`.
+   Strukturnya harus seperti ini:
+   /public_html/api/PHPMailer/Exception.php
+   /public_html/api/PHPMailer/PHPMailer.php
+   /public_html/api/PHPMailer/SMTP.php
+
+LANGKAH 2: BUAT FILE test_smtp.php
+Simpan kode di bawah ini sebagai `/api/test_smtp.php`
+
+--------------------------------------------------------------------------------
+FILE: /api/test_smtp.php
+--------------------------------------------------------------------------------
+<?php
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require 'PHPMailer/Exception.php';
+require 'PHPMailer/PHPMailer.php';
+require 'PHPMailer/SMTP.php';
+
+header("Content-Type: application/json");
+$input = json_decode(file_get_contents("php://input"), true);
+
+if (!isset($input['config']) || !isset($input['recipient'])) {
+    echo json_encode(['success' => false, 'message' => 'Missing config']);
+    exit;
+}
+
+$conf = $input['config'];
+$mail = new PHPMailer(true);
+
+try {
+    // Server settings
+    $mail->isSMTP();
+    $mail->Host       = $conf['host'];
+    $mail->SMTPAuth   = true;
+    $mail->Username   = $conf['user'];
+    $mail->Password   = $conf['pass'];
+    $mail->SMTPSecure = $conf['secure'] === 'ssl' ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
+    $mail->Port       = $conf['port'];
+
+    // Recipients
+    $mail->setFrom($conf['fromEmail'], $conf['fromName'] ?: 'QiosLink');
+    $mail->addAddress($input['recipient']);
+
+    // Content
+    $mail->isHTML(true);
+    $mail->Subject = 'QiosLink SMTP Test';
+    $mail->Body    = '<h1>It Works!</h1><p>Your SMTP configuration is correct.</p>';
+
+    $mail->send();
+    echo json_encode(['success' => true, 'message' => 'Test email sent successfully']);
+} catch (Exception $e) {
+    echo json_encode(['success' => false, 'message' => "Message could not be sent. Mailer Error: {$mail->ErrorInfo}"]);
+}
+?>
+
+--------------------------------------------------------------------------------
+LANGKAH 3: UPDATE callback.php (Untuk Notifikasi Otomatis)
+--------------------------------------------------------------------------------
+Agar sistem mengirim email saat ada pembayaran masuk, edit file `callback.php` Anda.
+Tambahkan logika ini setelah update status 'paid'.
+
+// ... (Kode update status paid sebelumnya) ...
+
+// KIRIM EMAIL NOTIFIKASI
+if ($user_config['smtp']['enableNotifications']) {
+    require_once 'api/PHPMailer/PHPMailer.php'; // Sesuaikan path
+    // ... Logika kirim email mirip test_smtp.php ...
+    // Gunakan $user_config['smtp'] sebagai kredensial
+    // Subject: "Payment Received: Rp " . number_format($amount)
+}

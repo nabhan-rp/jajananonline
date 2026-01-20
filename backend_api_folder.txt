@@ -1,0 +1,232 @@
+
+================================================================================
+BUNDLE FILE API (FOLDER: /public_html/api/) - VERSI PERBAIKAN DB
+================================================================================
+Instruksi:
+1. Masuk ke folder 'api' di hosting Anda.
+2. Buat file baru sesuai nama di judul (misal: db_connect.php).
+3. Copy-paste isinya dari bawah ini.
+================================================================================
+
+--------------------------------------------------------------------------------
+FILE 1: db_connect.php (FIXED CONNECTION & ERROR HANDLING)
+--------------------------------------------------------------------------------
+<?php
+// Setup CORS & Headers
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type");
+header("Content-Type: application/json"); // Pastikan output selalu JSON
+
+// Handle Preflight Request
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+// KONFIGURASI DATABASE
+// PENTING: TULIS PASSWORD APA ADANYA.
+// JANGAN MENGGUNAKAN URL ENCODE (%2F, dll). 
+// Jika password mengandung '/', tulis saja '/'.
+
+$host = "localhost";
+$username = "USERNAME_DB_ANDA";     
+$password = "PASSWORD_DB_ANDA";         
+$dbname = "NAMA_DB_ANDA";    
+
+try {
+    // Matikan error reporting bawaan mysqli agar bisa ditangkap catch
+    mysqli_report(MYSQLI_REPORT_OFF);
+    
+    $conn = new mysqli($host, $username, $password, $dbname);
+
+    if ($conn->connect_error) {
+        throw new Exception($conn->connect_error);
+    }
+    
+    // Set charset utf8mb4 agar support emoji dsb
+    $conn->set_charset("utf8mb4");
+
+} catch (Exception $e) {
+    // Tangkap error koneksi dan kirim sebagai JSON yang rapi
+    // Ini mencegah "Internal Server Error" (500) yang blank di frontend
+    http_response_code(500);
+    echo json_encode([
+        "success" => false, 
+        "message" => "Database Connection Failed: " . $e->getMessage()
+    ]);
+    exit(); // Stop eksekusi agar script lain tidak lanjut jalan dengan koneksi rusak
+}
+?>
+
+--------------------------------------------------------------------------------
+FILE 2: qris_utils.php
+--------------------------------------------------------------------------------
+<?php
+// Fungsi untuk menghitung CRC16 (Wajib untuk QRIS Dinamis)
+function crc16($data) {
+    $crc = 0xFFFF;
+    for ($i = 0; $i < strlen($data); $i++) {
+        $x = (($crc >> 8) ^ ord($data[$i])) & 0xFF;
+        $x ^= $x >> 4;
+        $crc = (($crc << 8) ^ ($x << 12) ^ ($x << 5) ^ $x) & 0xFFFF;
+    }
+    return strtoupper(str_pad(dechex($crc), 4, '0', STR_PAD_LEFT));
+}
+
+function formatField($tag, $value) {
+    $length = str_pad(strlen($value), 2, '0', STR_PAD_LEFT);
+    return $tag . $length . $value;
+}
+
+function generateDynamicQR($staticQr, $amount) {
+    $rawQr = $staticQr;
+    
+    // 1. Cari posisi CRC lama (Tag 63)
+    $crcPos = strrpos($rawQr, '6304');
+    if ($crcPos !== false) {
+        // Potong string sampai sebelum CRC
+        $rawQr = substr($rawQr, 0, $crcPos);
+    }
+    
+    // 2. Tambahkan Tag 54 (Transaction Amount)
+    $amountStr = floor($amount); // Pastikan bulat
+    $amountField = formatField('54', $amountStr);
+    
+    // 3. Susun payload baru: QR Lama + Tag Amount + Tag CRC Awal (6304)
+    $payload = $rawQr . $amountField . '6304';
+    
+    // 4. Hitung CRC baru dari payload
+    $crc = crc16($payload);
+    
+    // 5. Gabungkan
+    return $payload . $crc;
+}
+?>
+
+--------------------------------------------------------------------------------
+FILE 3: login.php
+--------------------------------------------------------------------------------
+<?php
+require 'db_connect.php'; // Otomatis handle error DB JSON jika gagal
+
+$input = json_decode(file_get_contents("php://input"), true);
+
+if(isset($input['username']) && isset($input['password'])) {
+    $user = $input['username'];
+    $pass = $input['password'];
+    
+    try {
+        // Mengambil data user
+        $stmt = $conn->prepare("
+            SELECT u.id, u.username, u.email, u.role, u.merchant_config, u.is_verified, u.creator_id, c.email as creator_email 
+            FROM users u 
+            LEFT JOIN users c ON u.creator_id = c.id 
+            WHERE u.username = ? AND u.password = ?
+        ");
+        
+        if(!$stmt) throw new Exception("Prepare failed: " . $conn->error);
+
+        $stmt->bind_param("ss", $user, $pass);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if($result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            
+            // Decode JSON config
+            $row['merchantConfig'] = json_decode($row['merchant_config']);
+            unset($row['merchant_config']);
+            
+            // Format data untuk React
+            $row['isVerified'] = $row['is_verified'] == 1;
+            $row['supportEmail'] = $row['creator_email'] ? $row['creator_email'] : 'admin@qioslink.com';
+            
+            echo json_encode(['success' => true, 'user' => $row]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Invalid Credentials']);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Login Error: ' . $e->getMessage()]);
+    }
+} else {
+    echo json_encode(['success' => false, 'message' => 'Missing Input']);
+}
+?>
+
+--------------------------------------------------------------------------------
+FILE 4: manage_users.php (REVISED)
+--------------------------------------------------------------------------------
+<?php
+require 'db_connect.php';
+
+$input = json_decode(file_get_contents("php://input"), true);
+$action = isset($_GET['action']) ? $_GET['action'] : ($input['action'] ?? '');
+
+try {
+    // LIST USERS
+    if ($action === 'list') {
+        $sql = "SELECT id, username, email, role, merchant_config, is_verified, creator_id FROM users ORDER BY id ASC";
+        $result = $conn->query($sql);
+        $users = [];
+        while ($row = $result->fetch_assoc()) {
+            $row['merchantConfig'] = json_decode($row['merchant_config']);
+            unset($row['merchant_config']);
+            $row['isVerified'] = $row['is_verified'] == 1;
+            $users[] = $row;
+        }
+        echo json_encode(['success' => true, 'users' => $users]);
+        exit;
+    }
+
+    // VERIFY USER MANUAL
+    if ($action === 'verify') {
+        if (!isset($input['id'])) throw new Exception("User ID required");
+        
+        $user_id = $input['id'];
+        $stmt = $conn->prepare("UPDATE users SET is_verified = 1, verification_code = NULL WHERE id = ?");
+        $stmt->bind_param("i", $user_id);
+        
+        if ($stmt->execute()) {
+            echo json_encode(['success' => true, 'message' => 'User verified successfully']);
+        } else {
+            throw new Exception("DB Error: " . $conn->error);
+        }
+        exit;
+    }
+
+    // CREATE / UPDATE USER
+    if ($action === 'create' || $action === 'update') {
+        $username = $input['username'];
+        $email = $input['email'];
+        $password = $input['password'];
+        $role = $input['role'];
+        $config = isset($input['config']) ? json_encode($input['config']) : null;
+        $creator_id = isset($input['creator_id']) ? $input['creator_id'] : 1; 
+
+        if ($action === 'create') {
+            $check = $conn->query("SELECT id FROM users WHERE username = '$username'");
+            if($check->num_rows > 0) { echo json_encode(['success'=>false, 'message'=>'Username exists']); exit; }
+
+            $stmt = $conn->prepare("INSERT INTO users (username, email, password, role, merchant_config, creator_id, is_verified) VALUES (?, ?, ?, ?, ?, ?, 1)");
+            $stmt->bind_param("sssssi", $username, $email, $password, $role, $config, $creator_id);
+            if ($stmt->execute()) echo json_encode(['success' => true]);
+            else throw new Exception("Insert failed: " . $conn->error);
+        } 
+        else if ($action === 'update') {
+            $id = $input['id'];
+            if (!empty($password)) {
+                $stmt = $conn->prepare("UPDATE users SET username=?, email=?, password=?, role=?, merchant_config=? WHERE id=?");
+                $stmt->bind_param("sssssi", $username, $email, $password, $role, $config, $id);
+            } else {
+                $stmt = $conn->prepare("UPDATE users SET username=?, email=?, role=?, merchant_config=? WHERE id=?");
+                $stmt->bind_param("ssssi", $username, $email, $role, $config, $id);
+            }
+            if ($stmt->execute()) echo json_encode(['success' => true]);
+            else throw new Exception("Update failed: " . $conn->error);
+        }
+    }
+} catch (Exception $e) {
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+}
+?>

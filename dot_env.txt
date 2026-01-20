@@ -1,0 +1,5 @@
+# Base Environment Configuration
+# Variable umum yang dipakai di semua mode
+
+# Base URL API (Default relative path)
+VITE_API_BASE_URL=./api

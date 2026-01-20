@@ -1,0 +1,74 @@
+
+<?php
+// FILE: api/login.php
+// INSTRUKSI:
+// 1. Rename file ini jadi "login.php".
+// 2. Upload/Replace ke folder /api/ di hosting.
+
+require 'db_connect.php';
+
+// Force JSON Header agar React tidak bingung
+header('Content-Type: application/json');
+
+// Menerima input dari React
+$input = json_decode(file_get_contents("php://input"), true);
+
+if(isset($input['username']) && isset($input['password'])) {
+    $user = $input['username'];
+    $pass = $input['password'];
+    
+    // 1. CEK KONEKSI DB DULU
+    if ($conn->connect_error) {
+        echo json_encode(['success' => false, 'message' => 'DB Connection Failed']);
+        exit;
+    }
+
+    // 2. CEK APAKAH TABEL 'users' ADA
+    // Ini sering jadi masalah: file diupload tapi SQL belum diimport.
+    $checkTable = $conn->query("SHOW TABLES LIKE 'users'");
+    if($checkTable->num_rows == 0) {
+        echo json_encode(['success' => false, 'message' => 'Database Table Missing. Please import SQL file.']);
+        exit;
+    }
+    
+    // 3. JALANKAN QUERY LOGIN
+    // Gunakan try-catch untuk menangkap error SQL (misal kolom kurang)
+    try {
+        $stmt = $conn->prepare("
+            SELECT u.id, u.username, u.email, u.role, u.merchant_config, u.is_verified, u.creator_id, c.email as creator_email 
+            FROM users u 
+            LEFT JOIN users c ON u.creator_id = c.id 
+            WHERE u.username = ? AND u.password = ?
+        ");
+
+        if (!$stmt) {
+             throw new Exception("Query Prepare Failed: " . $conn->error);
+        }
+
+        $stmt->bind_param("ss", $user, $pass);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if($result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            
+            // Decode JSON config agar bisa dibaca React
+            $row['merchantConfig'] = json_decode($row['merchant_config']);
+            unset($row['merchant_config']);
+            
+            // Convert integer ke boolean untuk React
+            $row['isVerified'] = $row['is_verified'] == 1;
+            $row['supportEmail'] = $row['creator_email'] ? $row['creator_email'] : 'admin@qioslink.com';
+            
+            echo json_encode(['success' => true, 'user' => $row]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Invalid Credentials (User not found)']);
+        }
+    } catch (Exception $e) {
+        // Tangkap error fatal dan ubah jadi JSON
+        echo json_encode(['success' => false, 'message' => 'Server Error: ' . $e->getMessage()]);
+    }
+} else {
+    echo json_encode(['success' => false, 'message' => 'Missing Input Data']);
+}
+?>

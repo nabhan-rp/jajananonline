@@ -1,0 +1,127 @@
+<?php
+// =============================================================================
+// QIOSLINK QRIS GATEWAY FOR WHMCS
+// =============================================================================
+// INSTRUKSI:
+// 1. Rename file ini menjadi: qioslink.php
+// 2. Upload ke folder: /modules/gateways/
+// =============================================================================
+
+if (!defined("WHMCS")) {
+    die("This file cannot be accessed directly");
+}
+
+function qioslink_MetaData()
+{
+    return array(
+        'DisplayName' => 'QiosLink QRIS (Nobu)',
+        'APIVersion' => '1.1',
+        'DisableLocalCreditCardInput' => true,
+        'TokenisedStorage' => false,
+    );
+}
+
+function qioslink_config()
+{
+    return array(
+        'FriendlyName' => array(
+            'Type' => 'System',
+            'Value' => 'QiosLink QRIS',
+        ),
+        'apiUrl' => array(
+            'FriendlyName' => 'API URL',
+            'Type' => 'text',
+            'Size' => '50',
+            'Default' => 'https://bayar.jajanan.online/api/create_payment.php', // Ganti dengan domain panel Anda
+            'Description' => 'URL ke file create_payment.php di Panel QiosLink',
+        ),
+        'merchantId' => array(
+            'FriendlyName' => 'Merchant ID',
+            'Type' => 'text',
+            'Size' => '10',
+            'Description' => 'ID User Anda (Angka) dari Dashboard QiosLink',
+        ),
+        'apiKey' => array(
+            'FriendlyName' => 'App Secret Key',
+            'Type' => 'password',
+            'Size' => '30',
+            'Description' => 'Secret Key dari menu Settings > Merchant Config',
+        ),
+    );
+}
+
+function qioslink_link($params)
+{
+    // 1. Ambil Konfigurasi
+    $apiUrl = $params['apiUrl'];
+    $merchantId = $params['merchantId'];
+    $apiKey = $params['apiKey'];
+
+    // 2. Ambil Data Invoice
+    $invoiceId = $params['invoiceid'];
+    $amount = $params['amount'];
+    $currencyCode = $params['currency'];
+    
+    // 3. Setup URL Callback Otomatis
+    $systemUrl = $params['systemurl'];
+    $moduleName = $params['paymentmethod'];
+    $callbackUrl = $systemUrl . 'modules/gateways/callback/' . $moduleName . '.php';
+
+    // 4. Siapkan Payload ke API QiosLink
+    $postData = json_encode([
+        'merchant_id' => $merchantId,
+        'api_key' => $apiKey,
+        'amount' => $amount,
+        'description' => 'Invoice #' . $invoiceId,
+        'external_id' => $invoiceId,
+        'callback_url' => $callbackUrl,
+        'expiry_minutes' => 60 // Link expired dalam 60 menit
+    ]);
+
+    // 5. Kirim Request (cURL)
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $apiUrl);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    
+    // Bypass SSL (Opsional: Hapus jika di production server yang secure)
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+    
+    $response = curl_exec($ch);
+    $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    // 6. Proses Response
+    $json = json_decode($response);
+
+    if ($httpcode == 200 && isset($json->success) && $json->success == true) {
+        $qrString = $json->qr_string;
+        // Generate Gambar QR via API Google Chart / QRServer
+        $imgUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" . urlencode($qrString);
+        
+        // 7. Output HTML ke Halaman Invoice Client
+        $code = '<div style="text-align:center; padding: 20px; border: 1px solid #e5e7eb; border-radius: 12px; background:#f9fafb; margin-top:15px;">';
+        $code .= '<h4 style="margin-top:0; color:#374151; font-weight:bold;">Scan QRIS (Nobu Bank)</h4>';
+        $code .= '<img src="'.$imgUrl.'" style="width: 220px; height: 220px; margin-bottom:15px; border: 4px solid white; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);"/><br>';
+        $code .= '<div style="font-size: 1.2em; font-weight: bold; color: #4f46e5; margin-bottom: 5px;">Rp '.number_format($amount, 0, ',', '.').'</div>';
+        $code .= '<small style="color:#6b7280;">Buka aplikasi e-wallet/banking Anda dan scan kode di atas.</small><br>';
+        $code .= '<small style="color:#6b7280; display:block; margin-top:5px;">Status pembayaran akan terdeteksi otomatis.</small>';
+        $code .= '</div>';
+        
+        // Script Auto Reload (Optional)
+        $code .= '<script>setTimeout(function(){ window.location.reload(1); }, 15000);</script>';
+        
+        return $code;
+    } else {
+        // Tampilkan Error
+        $errorMsg = isset($json->message) ? $json->message : 'Connection Error';
+        return '<div class="alert alert-danger" style="margin-top:10px;">
+                    <strong>QRIS Error:</strong> '.$errorMsg.'<br>
+                    <small>Pastikan API URL, Merchant ID, dan Secret Key benar di setting gateway.</small>
+                </div>';
+    }
+}
+?>
