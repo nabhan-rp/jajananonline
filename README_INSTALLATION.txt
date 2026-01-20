@@ -1,50 +1,68 @@
 
 ================================================================================
-JAJANAN ONLINE - INSTALLATION GUIDE (v1.0)
+JAJANAN ONLINE SaaS - COMPLETE INSTALLATION GUIDE (v1.1)
 ================================================================================
 
-Platform Marketplace & Produk Digital dengan QRIS Otomatis.
-
-SYSTEM REQUIREMENTS:
-- PHP 7.4 or 8.x
-- MySQL / MariaDB
-- cPanel / Hosting (Shared ok)
+Aplikasi ini memiliki 2 bagian:
+1. FRONTEND (React/Vite) - Tampilan antarmuka.
+2. BACKEND (PHP Native) - Logika server, database, dan koneksi ke Qiospay.
 
 --------------------------------------------------------------------------------
-1. DATABASE SETUP
+OPSI 1: MODE DEMO (LOCALHOST / STATIC HOSTING)
 --------------------------------------------------------------------------------
-1. Buat Database baru di cPanel.
-2. Import file `database.sql` (yang disediakan di dalam bundle ini).
-3. Ini akan membuat tabel: users, products, product_licenses, orders, reviews, transactions.
+Cocok untuk preview UI tanpa install database/PHP. Data tersimpan di browser.
+
+1. Buka file `.env` (atau rename `env_demo.txt` jadi `.env`).
+   Pastikan isinya:
+   VITE_USE_DEMO_DATA=true
+   VITE_API_BASE_URL=./api
+
+2. Buka terminal di folder project:
+   npm install
+   npm run dev
+
+3. Buka browser di http://localhost:5173
+   Login: admin / admin
 
 --------------------------------------------------------------------------------
-2. BACKEND SETUP (PHP)
+OPSI 2: MODE PRODUCTION (LIVE DI CPANEL/VPS)
 --------------------------------------------------------------------------------
-1. Buat folder `api` di `public_html`.
-2. Upload semua file .php yang berawalan `api_` (rename hilangkan prefixnya) ke folder `/api`.
-   Contoh: `api_manage_store_php.txt` -> `/api/manage_store.php`.
-   File wajib:
-   - db_connect.php (Edit password database disini!)
-   - manage_store.php
-   - process_order.php
-   - manage_reviews.php
-   - login.php
-   - register.php
-   - qris_utils.php
-3. Upload `backend_callback.txt` sebagai `callback.php` di folder root (`public_html/callback.php`).
+Wajib punya Hosting dengan PHP 7.4+ dan MySQL.
 
---------------------------------------------------------------------------------
-3. FRONTEND SETUP (React)
---------------------------------------------------------------------------------
-1. Di komputer lokal: `npm install` lalu `npm run build`.
-2. Upload isi folder `dist` ke `public_html`.
+TAHAP A: PERSIAPAN FRONTEND
+1. Ubah file `.env` menjadi:
+   VITE_USE_DEMO_DATA=false
+   VITE_API_BASE_URL=./api
+2. Jalankan perintah: `npm run build`
+3. Hasil build ada di folder `dist`.
 
---------------------------------------------------------------------------------
-4. INTEGRASI QRIS (QIOSLINK ENGINE)
---------------------------------------------------------------------------------
-1. Login sebagai Admin (user: admin, pass: admin).
-2. Masuk menu Pengaturan.
-3. Masukkan String QRIS Nobu/Qiospay Anda.
-4. Di Dashboard Qiospay, set Callback URL ke: `https://jajanan.online/callback.php`
+TAHAP B: PERSIAPAN DATABASE
+1. Buka cPanel -> MySQL Databases.
+2. Buat Database baru (misal: `toko_online`).
+3. Import file `database.sql` ke database tersebut via phpMyAdmin.
+
+TAHAP C: UPLOAD FILE
+1. Buka File Manager di cPanel -> `public_html`.
+2. Upload SEMUA isi folder `dist` (index.html, assets/).
+3. Buat folder baru bernama `api`.
+4. Upload file-file PHP berikut ke dalam folder `api`:
+   - db_connect.php (EDIT FILE INI: Masukkan user/pass DB Anda)
+   - api_process_order_php.txt -> rename jadi `process_order.php`
+   - api_create_payment_php.txt -> rename jadi `create_payment.php`
+   - api_manage_users_php.txt -> rename jadi `manage_users.php`
+   - api_manage_store_php.txt -> rename jadi `manage_store.php`
+   - backend_qris_utils.txt -> rename jadi `qris_utils.php`
+   - backend_login.txt -> rename jadi `login.php`
+   - backend_register.txt -> rename jadi `register.php`
+5. Upload file `api_callback_php.txt` ke ROOT folder (`public_html/callback.php`) -> Rename jadi `callback.php`.
+
+TAHAP D: INTEGRASI
+1. Login ke website Anda (admin/admin).
+2. Masuk menu Settings -> Profile.
+3. Ubah password default.
+4. Masuk tab "Merchant Config".
+5. Pilih Mode "Native" dan masukkan String QRIS dari Qiospay/Nobu.
+6. Simpan.
+7. Di Dashboard Qiospay, set Callback URL ke: `https://domain-anda.com/callback.php`
 
 SELESAI.

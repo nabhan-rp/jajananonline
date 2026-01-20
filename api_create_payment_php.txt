@@ -1,0 +1,119 @@
+<?php
+// FILE: api/create_payment.php
+// Digunakan oleh Pihak Ketiga (WHMCS/WooCommerce) untuk request QRIS ke server ini.
+
+require 'db_connect.php';
+require 'qris_utils.php';
+
+header('Content-Type: application/json');
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: POST");
+
+$input = json_decode(file_get_contents("php://input"), true);
+
+if(isset($input['merchant_id']) && isset($input['amount'])) {
+    
+    $merchant_id = $input['merchant_id'];
+    $base_amount = (int)$input['amount'];
+    $description = isset($input['description']) ? $input['description'] : 'Payment';
+    
+    // Parameter Integrasi Eksternal
+    $external_id = isset($input['external_id']) ? $input['external_id'] : null;
+    $callback_url = isset($input['callback_url']) ? $input['callback_url'] : null;
+    
+    // 1. CEK DUPLIKAT (Idempotency)
+    // Jika Invoice ID ini sudah ada status pending, berikan data lama (jangan buat baru)
+    if (!empty($external_id)) {
+        $check = $conn->prepare("SELECT trx_id, qr_string, payment_url, amount FROM transactions WHERE merchant_id = ? AND external_ref_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1");
+        $check->bind_param("is", $merchant_id, $external_id);
+        $check->execute();
+        $resCheck = $check->get_result();
+        
+        if ($resCheck->num_rows > 0) {
+            $existing = $resCheck->fetch_assoc();
+            echo json_encode([
+                "success" => true,
+                "trx_id" => $existing['trx_id'],
+                "qr_string" => $existing['qr_string'],
+                "payment_url" => $existing['payment_url'],
+                "amount" => (int)$existing['amount'],
+                "is_existing" => true
+            ]);
+            exit;
+        }
+    }
+
+    // 2. GENERATE KODE UNIK (Agar nominal tidak bentrok)
+    // Karena sistem statis Nobu membedakan transaksi dari nominal.
+    $is_unique = false;
+    $retry = 0;
+    $final_amount = $base_amount;
+
+    while (!$is_unique && $retry < 15) {
+        $unique_code = ($base_amount > 0) ? rand(1, 750) : 0;
+        $candidate_amount = $base_amount + $unique_code;
+        
+        // Cek apakah nominal ini sedang pending?
+        $cekAmt = $conn->query("SELECT id FROM transactions WHERE amount = $candidate_amount AND status = 'pending'");
+        if ($cekAmt->num_rows == 0) {
+            $final_amount = $candidate_amount;
+            $is_unique = true;
+        }
+        $retry++;
+    }
+
+    if (!$is_unique) {
+        echo json_encode(["success"=>false, "message"=>"Server Busy (Amount Collision). Try again."]); exit;
+    }
+
+    // 3. PROSES SIMPAN
+    $stmt = $conn->prepare("SELECT merchant_config FROM users WHERE id = ?");
+    $stmt->bind_param("i", $merchant_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    
+    if($res->num_rows > 0) {
+        $user = $res->fetch_assoc();
+        $config = json_decode($user['merchant_config'], true);
+        
+        if (!isset($config['qrisString']) || strlen($config['qrisString']) < 10) {
+            echo json_encode(['success' => false, 'message' => 'Merchant QRIS not configured']);
+            exit;
+        }
+
+        $dynamicQR = generateDynamicQR($config['qrisString'], $final_amount);
+        $trx_id = "TRX-" . time() . rand(100,999);
+        $payment_token = bin2hex(random_bytes(16));
+        
+        // URL Pembayaran Public
+        $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http");
+        $domain = str_replace('/api', '', $protocol . "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF'])); 
+        // Bersihkan path agar mengarah ke root
+        $domain = preg_replace('#/api$#', '', dirname($protocol . "://" . $_SERVER['HTTP_HOST'] . $_SERVER['PHP_SELF']));
+        if (substr($domain, -1) != '/') $domain .= '/';
+        
+        $payment_url = $domain . "?pay=" . $payment_token;
+
+        $sql = "INSERT INTO transactions (trx_id, merchant_id, amount, description, status, qr_string, payment_token, payment_url, external_ref_id, external_callback_url) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)";
+        $ins = $conn->prepare($sql);
+        $ins->bind_param("siissssss", $trx_id, $merchant_id, $final_amount, $description, $dynamicQR, $payment_token, $payment_url, $external_id, $callback_url);
+        
+        if ($ins->execute()) {
+            echo json_encode([
+                "success" => true,
+                "trx_id" => $trx_id,
+                "qr_string" => $dynamicQR,
+                "payment_url" => $payment_url,
+                "amount" => $final_amount,
+                "original_amount" => $base_amount
+            ]);
+        } else {
+            echo json_encode(["success" => false, "message" => "DB Error: " . $conn->error]);
+        }
+    } else {
+        echo json_encode(["success" => false, "message" => "Merchant not found"]);
+    }
+} else {
+    echo json_encode(["success" => false, "message" => "Invalid Input"]);
+}
+?>

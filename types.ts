@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export type UserRole = 'superadmin' | 'merchant' | 'cs' | 'user';
@@ -6,6 +7,7 @@ export interface User {
   id: string;
   username: string;
   email?: string;
+  password?: string; // Optional for forms
   role: UserRole;
   merchantConfig?: MerchantConfig;
   creatorId?: string;
@@ -60,10 +62,20 @@ export interface Order {
 
 export interface MerchantConfig {
   merchantName: string;
-  merchantCode: string; 
-  qiospayApiKey: string; 
-  appSecretKey: string; 
-  qrisString: string; 
+  
+  // Integration Mode
+  integrationMode: 'native' | 'bridge';
+
+  // Mode 1: Native (Direct Qiospay/Nobu)
+  qrisString?: string;      // The static string
+  merchantCode?: string;    // From Qiospay Dashboard
+  qiospayApiKey?: string;   // From Qiospay Dashboard
+
+  // Mode 2: Bridge (Connect to external QiosLink Host)
+  bridgeUrl?: string;       // URL to target create_payment.php
+  bridgeMerchantId?: string;// ID on target system
+  bridgeApiKey?: string;    // Secret Key on target system
+
   branding?: {
     customDomain?: string;
     brandColor?: string;
@@ -84,7 +96,7 @@ export interface Transaction {
   paymentUrl?: string; 
 }
 
-export type ViewState = 'landing' | 'dashboard' | 'store' | 'orders' | 'settings' | 'wallet' | 'reviews';
+export type ViewState = 'landing' | 'dashboard' | 'store' | 'orders' | 'settings' | 'wallet' | 'users';
 
 declare global {
   interface ImportMeta {

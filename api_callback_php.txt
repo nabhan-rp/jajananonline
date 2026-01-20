@@ -1,0 +1,69 @@
+<?php
+// FILE: callback.php
+// Letakkan di PUBLIC_HTML (Root)
+
+require 'api/db_connect.php'; 
+
+// 1. Terima Data Qiospay
+$input = file_get_contents("php://input");
+$data = json_decode($input);
+
+// Log (Opsional, buat debug)
+// file_put_contents('webhook_log.txt', date('Y-m-d H:i:s') . " | " . $input . "\n", FILE_APPEND);
+
+if(isset($data->status) && $data->status == 'success') {
+    
+    $amount_paid = (int)$data->amount;
+    
+    // 2. Cari Transaksi Pending dengan Nominal Sama (LIFO)
+    $sql = "SELECT id, trx_id, external_callback_url, external_ref_id, merchant_id 
+            FROM transactions 
+            WHERE amount = ? AND status = 'pending' 
+            ORDER BY created_at DESC LIMIT 1";
+            
+    if($stmt = $conn->prepare($sql)) {
+        $stmt->bind_param("i", $amount_paid);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if($result->num_rows > 0) {
+            $row = $result->fetch_assoc();
+            $trx_id_internal = $row['id'];
+            $trx_id_public = $row['trx_id'];
+            
+            // 3. Update Status -> PAID
+            $conn->query("UPDATE transactions SET status = 'paid' WHERE id = $trx_id_internal");
+            
+            // 3b. Update Order Status (Jika berasal dari Storefront Internal)
+            $conn->query("UPDATE orders SET status = 'paid' WHERE trx_id = '$trx_id_public'");
+            
+            // 3c. Deliver License Key (Jika Storefront Digital License)
+            // ... (Logic license key delivery - simplified here) ...
+            
+            // 4. FORWARDING (Jika berasal dari WHMCS/Bridge)
+            if (!empty($row['external_callback_url'])) {
+                $forward_payload = [
+                    'status' => 'paid',
+                    'trx_id' => $trx_id_public,
+                    'external_id' => $row['external_ref_id'],
+                    'amount' => $amount_paid
+                ];
+                
+                $ch = curl_init($row['external_callback_url']);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_POST, true);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($forward_payload));
+                curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+                curl_exec($ch);
+                curl_close($ch);
+            }
+            
+            echo json_encode(["status" => "success", "message" => "Payment Confirmed"]);
+        } else {
+            echo json_encode(["status" => "ignored", "message" => "No pending trx found"]);
+        }
+    }
+} else {
+    echo json_encode(["status" => "failed", "message" => "Invalid Payload"]);
+}
+?>

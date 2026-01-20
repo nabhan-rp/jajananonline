@@ -1,5 +1,5 @@
 <?php
-// FILE: api/process_order.php
+// FILE: api/process_order.php (UPDATED FOR BRIDGE MODE)
 require 'db_connect.php';
 require 'qris_utils.php';
 
@@ -22,34 +22,91 @@ if ($action === 'create' && isset($input['product_id'])) {
         $product = $res->fetch_assoc();
         $merchantConfig = json_decode($product['merchant_config'], true);
         
-        $totalAmount = $product['price']; // Add shipping cost logic here if needed
-        $uniqueCode = rand(1, 499);
-        $finalAmount = $totalAmount + $uniqueCode;
+        // Base Amount
+        $baseAmount = $product['price'];
         
-        // CHECK LICENSE AVAILABILITY
-        $assignedLicenseId = null;
+        // Check Integration Mode
+        $mode = isset($merchantConfig['integrationMode']) ? $merchantConfig['integrationMode'] : 'native';
+        $payment_url = '';
+        $qrString = '';
+        $finalAmount = $baseAmount;
+        $trx_id = "JO-" . time() . rand(100, 999);
+        $payment_token = bin2hex(random_bytes(16));
+
+        // --- MODE 1: NATIVE ---
+        if ($mode === 'native') {
+            $uniqueCode = rand(1, 499);
+            $finalAmount = $baseAmount + $uniqueCode;
+            
+            // Check config
+            if(!isset($merchantConfig['qrisString']) || empty($merchantConfig['qrisString'])) {
+                echo json_encode(['success' => false, 'message' => 'Native QRIS not configured by merchant.']);
+                exit;
+            }
+
+            $qrString = generateDynamicQR($merchantConfig['qrisString'], $finalAmount);
+            $payment_url = './?pay=' . $payment_token;
+        } 
+        // --- MODE 2: API BRIDGE (EXTERNAL) ---
+        else if ($mode === 'bridge') {
+            $bridgeUrl = $merchantConfig['bridgeUrl'];
+            $bridgeMid = $merchantConfig['bridgeMerchantId'];
+            $bridgeKey = $merchantConfig['bridgeApiKey'];
+            
+            if(!$bridgeUrl || !$bridgeMid) {
+                echo json_encode(['success' => false, 'message' => 'Bridge configuration incomplete.']);
+                exit;
+            }
+
+            // Create Payload for External API
+            // Note: External API expects: merchant_id, api_key, amount, description, external_id
+            $payload = [
+                'merchant_id' => $bridgeMid,
+                'api_key' => $bridgeKey, // Assuming external API supports key auth
+                'amount' => $baseAmount, // External API will likely handle unique code or fees
+                'description' => "Order " . $trx_id,
+                'external_id' => $trx_id, // Important: Send our ID as external_id to them
+                'callback_url' => '' // Can be implemented if you have a public callback URL for this SaaS
+            ];
+
+            // cURL Request
+            $ch = curl_init($bridgeUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+            // curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Enable if dev environment
+            
+            $response = curl_exec($ch);
+            curl_close($ch);
+            
+            $jsonRes = json_decode($response, true);
+            
+            if(isset($jsonRes['success']) && $jsonRes['success']) {
+                $qrString = $jsonRes['qr_string'];
+                $finalAmount = $jsonRes['amount']; // Use amount returned by external API (might include unique code)
+                $payment_url = $jsonRes['payment_url'] ?? ''; 
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Bridge Error: ' . ($jsonRes['message'] ?? 'Unknown')]);
+                exit;
+            }
+        }
+
+        // Handle Licenses (Inventory)
         if ($product['type'] === 'digital_license') {
-            // Lock a random available license
-            $licSql = "SELECT id FROM product_licenses WHERE product_id = $prodId AND status = 'available' LIMIT 1 FOR UPDATE";
+            // Check stock but don't assign yet if using bridge (optional logic)
+            // Ideally we check stock before calling external API
+            $licSql = "SELECT id FROM product_licenses WHERE product_id = $prodId AND status = 'available' LIMIT 1";
             $licRes = $conn->query($licSql);
             if ($licRes->num_rows == 0) {
                 echo json_encode(['success' => false, 'message' => 'Stok Lisensi Habis!']);
                 exit;
             }
-            $licRow = $licRes->fetch_assoc();
-            $assignedLicenseId = $licRow['id'];
-            // Temporarily mark as locked (optional complex logic, simplified here to 'locked' or keep available until paid)
-            // For simple system: We allocate ONLY AFTER payment. 
-            // BUT to prevent overselling, strict systems allocate now. 
-            // Here we assume high availability or handle conflict on callback.
         }
 
-        // Generate QR
-        $qrString = generateDynamicQR($merchantConfig['qrisString'], $finalAmount);
-        $trx_id = "JO-" . time() . rand(100, 999);
-        $payment_token = bin2hex(random_bytes(16));
-
         // Insert Order
+        // Note: For Bridge mode, we still save the order locally as 'pending'. 
+        // We need a way to check status later (cron job or callback from external).
         $ins = $conn->prepare("
             INSERT INTO orders (trx_id, product_id, customer_name, customer_email, amount, status, payment_token, shipping_address) 
             VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
@@ -61,8 +118,10 @@ if ($action === 'create' && isset($input['product_id'])) {
                 'success' => true,
                 'qr_string' => $qrString,
                 'amount' => $finalAmount,
-                'payment_url' => './?pay=' . $payment_token
+                'payment_url' => $payment_url
             ]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'DB Error']);
         }
     } else {
         echo json_encode(['success' => false, 'message' => 'Product unavailable']);
@@ -73,15 +132,11 @@ if ($action === 'history') {
     $userId = $_GET['user_id'];
     $role = $_GET['role'];
     
-    // If merchant, show orders of their products. If user, show orders they made (by email match).
     if ($role === 'merchant' || $role === 'superadmin') {
         $sql = "SELECT o.*, p.name as productName FROM orders o JOIN products p ON o.product_id = p.id WHERE p.user_id = ? ORDER BY o.id DESC";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param("i", $userId);
     } else {
-        // For 'user' role, we ideally match by User ID if logged in. 
-        // Assuming we store user_id in orders now or match by email.
-        // For simplicity, let's assume we pass customer_email from frontend session.
         $email = $_GET['email'] ?? ''; 
         $sql = "SELECT o.*, p.name as productName FROM orders o JOIN products p ON o.product_id = p.id WHERE o.customer_email = (SELECT email FROM users WHERE id=?) ORDER BY o.id DESC";
         $stmt = $conn->prepare($sql);
