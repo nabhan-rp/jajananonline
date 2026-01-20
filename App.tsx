@@ -15,9 +15,24 @@ import { User, Product, Order, Review, ViewState, ProductType, MerchantConfig } 
 import { formatRupiah, generateDynamicQR } from './utils/qrisUtils';
 import { QRCodeDisplay } from './components/QRCodeDisplay';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || './api';
-// Default to TRUE if env is not explicitly 'false'. This enables Demo Mode out-of-the-box.
-const IS_DEMO_MODE = import.meta.env.VITE_USE_DEMO_DATA !== 'false';
+// --- SAFE ENV ACCESS ---
+// Helper to safely access env vars without crashing if import.meta.env is undefined
+const getEnv = (key: string, defaultValue: string): string => {
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      // @ts-ignore
+      return import.meta.env[key] ?? defaultValue;
+    }
+  } catch {
+    // Ignore errors
+  }
+  return defaultValue;
+};
+
+const API_BASE = getEnv('VITE_API_BASE_URL', './api');
+// Default to TRUE if env is not explicitly 'false'
+const IS_DEMO_MODE = getEnv('VITE_USE_DEMO_DATA', 'true') !== 'false';
 
 // --- MOCK DATA FOR DEMO ---
 const MOCK_USERS = [
