@@ -85,3 +85,13 @@ export interface Transaction {
 }
 
 export type ViewState = 'landing' | 'dashboard' | 'store' | 'orders' | 'settings' | 'wallet' | 'reviews';
+
+declare global {
+  interface ImportMeta {
+    env: {
+      VITE_API_BASE_URL?: string;
+      VITE_USE_DEMO_DATA?: string;
+      [key: string]: any;
+    };
+  }
+}

@@ -1,0 +1,5 @@
+# Rename file ini menjadi .env untuk mengaktifkan MODE DEMO
+# Cocok untuk preview tampilan tanpa perlu install PHP/Database
+
+VITE_USE_DEMO_DATA=true
+VITE_API_BASE_URL=./api

@@ -1,0 +1,5 @@
+# Rename file ini menjadi .env untuk mengaktifkan MODE LIVE
+# Wajib upload file PHP backend ke folder /api/ di hosting
+
+VITE_USE_DEMO_DATA=false
+VITE_API_BASE_URL=./api

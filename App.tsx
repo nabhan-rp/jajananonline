@@ -6,7 +6,7 @@ import {
   Zap, ShieldCheck, Heart, Search, Filter, Upload, Download,
   FileText, Key, Truck, MessageSquare, ExternalLink, RefreshCw,
   Plus, Trash2, Edit, Save, CheckCircle2, AlertCircle, Loader2,
-  ArrowRight, PlayCircle
+  ArrowRight, PlayCircle, Info, Github, Server, Globe, Database, Code
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -15,8 +15,51 @@ import { User, Product, Order, Review, ViewState, ProductType, MerchantConfig } 
 import { formatRupiah, generateDynamicQR } from './utils/qrisUtils';
 import { QRCodeDisplay } from './components/QRCodeDisplay';
 
-const API_BASE = './api';
-const IS_DEMO_MODE = false;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || './api';
+// Default to TRUE if env is not explicitly 'false'. This enables Demo Mode out-of-the-box.
+const IS_DEMO_MODE = import.meta.env.VITE_USE_DEMO_DATA !== 'false';
+
+// --- MOCK DATA FOR DEMO ---
+const MOCK_USERS = [
+  { 
+    id: '1', 
+    username: 'admin', 
+    password: 'admin', 
+    role: 'superadmin' as const, 
+    merchantConfig: { 
+      merchantName: 'Jajanan Official', 
+      merchantCode: 'QP-DEMO-001', 
+      qrisString: '00020101021126670016COM.NOBUBANK.WWW01189360050300000907180214905487390387780303UMI51440014ID.CO.QRIS.WWW0215ID20254619920700303UMI5204581753033605802ID5914Narpra Digital6009INDRAMAYU61054521162070703A016304D424', 
+      qiospayApiKey: 'demo-key', 
+      appSecretKey: 'secret' 
+    } 
+  },
+  { 
+    id: '2', 
+    username: 'merchant', 
+    password: 'merchant', 
+    role: 'merchant' as const, 
+    merchantConfig: { 
+      merchantName: 'Toko Kopi Senja', 
+      merchantCode: 'QP-DEMO-002', 
+      qrisString: '00020101021126670016COM.NOBUBANK.WWW01189360050300000907180214905487390387780303UMI51440014ID.CO.QRIS.WWW0215ID20254619920700303UMI5204581753033605802ID5914Narpra Digital6009INDRAMAYU61054521162070703A016304D424', 
+      qiospayApiKey: 'demo-key-2', 
+      appSecretKey: 'secret-2' 
+    } 
+  },
+  { id: '3', username: 'budi', password: 'budi', role: 'user' as const },
+];
+
+const MOCK_PRODUCTS: Product[] = [
+  { id: '101', userId: '2', name: 'Kopi Susu Gula Aren (1L)', description: 'Kopi segar ukuran 1 liter.', price: 85000, type: 'physical', weight: 1200, isActive: true, rating: 4.8, image: 'https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&q=80&w=300' },
+  { id: '102', userId: '2', name: 'E-Book: Jago React JS', description: 'Panduan lengkap belajar React dari nol.', price: 150000, type: 'digital_static', isActive: true, rating: 5.0, digitalContent: 'https://link.to/download', image: 'https://images.unsplash.com/photo-1555099962-4199c345e5dd?auto=format&fit=crop&q=80&w=300' },
+  { id: '103', userId: '2', name: 'Windows 11 Pro Key', description: 'Serial key original aktif selamanya.', price: 25000, type: 'digital_license', isActive: true, rating: 4.5, image: 'https://images.unsplash.com/photo-1625813506062-0aeb1d7a094b?auto=format&fit=crop&q=80&w=300' },
+];
+
+const MOCK_ORDERS: Order[] = [
+  { id: 'ord-1', trx_id: 'TRX-DEMO-001', productId: '101', productName: 'Kopi Susu Gula Aren (1L)', customerName: 'Budi Santoso', customerEmail: 'budi@demo.com', amount: 85123, status: 'paid', createdAt: '2023-10-01 10:00:00' },
+  { id: 'ord-2', trx_id: 'TRX-DEMO-002', productId: '103', productName: 'Windows 11 Pro Key', customerName: 'Siti Aminah', customerEmail: 'siti@demo.com', amount: 25456, status: 'pending', createdAt: '2023-10-02 14:30:00' },
+];
 
 // --- COMPONENTS ---
 
@@ -43,18 +86,20 @@ const LandingPage = ({ onLogin, onRegister }: { onLogin: ()=>void, onRegister: (
            </div>
            <div>
              <h1 className="text-xl font-extrabold text-gray-900 tracking-tight leading-none">Jajanan<span className="text-orange-600">Online</span></h1>
-             <p className="text-[10px] font-bold text-gray-500 tracking-wide uppercase">SaaS - Link-in-Bio & Store</p>
+             <p className="text-[10px] font-bold text-gray-500 tracking-wide uppercase">Open Source Marketplace Engine</p>
            </div>
         </div>
         <div className="hidden md:flex gap-8 text-sm font-semibold text-gray-600">
           <a href="#features" className="hover:text-orange-600 transition-colors">Fitur</a>
-          <a href="#products" className="hover:text-orange-600 transition-colors">Katalog</a>
-          <a href="#testimoni" className="hover:text-orange-600 transition-colors">Testimoni</a>
+          <a href="#deploy" className="hover:text-orange-600 transition-colors">Deployment</a>
+          <a href="https://github.com" target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-gray-900 transition-colors"><Github size={16}/> Source Code</a>
         </div>
         <div className="flex gap-3">
-          <button onClick={onLogin} className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-orange-50 rounded-full transition-all">Masuk</button>
+          <button onClick={onLogin} className="px-5 py-2.5 text-sm font-bold text-gray-600 hover:bg-orange-50 rounded-full transition-all">
+             {IS_DEMO_MODE ? 'Login Demo' : 'Masuk'}
+          </button>
           <button onClick={onRegister} className="px-5 py-2.5 text-sm font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-full shadow-lg shadow-orange-500/30 transition-all flex items-center gap-2">
-            Buka Toko <ArrowRight size={16}/>
+            Mulai Gratis <ArrowRight size={16}/>
           </button>
         </div>
       </div>
@@ -65,29 +110,40 @@ const LandingPage = ({ onLogin, onRegister }: { onLogin: ()=>void, onRegister: (
       <div className="absolute top-0 right-0 -mr-32 -mt-32 w-[600px] h-[600px] bg-orange-100/50 rounded-full blur-3xl -z-10"></div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-100 text-orange-700 text-xs font-bold mb-6 border border-orange-200">
-             <Zap size={14} className="fill-orange-700"/> Platform Jualan No. #1
-          </div>
+          {IS_DEMO_MODE ? (
+             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-bold mb-6 border border-blue-200">
+                <Info size={14} className="fill-blue-700 text-white"/> Mode Demo (Data Lokal)
+             </div>
+          ) : (
+             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold mb-6 border border-green-200">
+                <Zap size={14} className="fill-green-700 text-white"/> Live Production Mode
+             </div>
+          )}
           <h1 className="text-5xl md:text-7xl font-extrabold text-gray-900 mb-6 leading-tight">
-            Beli apa saja, <br/>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">di mana saja!</span>
+            Platform Jualan <br/>
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-red-600">Open Source</span>
           </h1>
           <p className="text-lg text-gray-500 mb-8 leading-relaxed max-w-lg">
-            Platform all-in-one untuk menjual produk fisik, e-book, hingga lisensi software (Serial Key) secara otomatis. Terima pembayaran QRIS dalam hitungan detik.
+            Aplikasi Marketplace & Link-in-Bio yang bisa Anda host sendiri (Self-Hosted) atau gunakan sebagai SaaS. Ditenagai oleh <b>QiosLink Engine</b> untuk pembayaran QRIS Dinamis otomatis.
           </p>
           <div className="flex flex-col sm:flex-row gap-4">
-             <button onClick={onRegister} className="px-8 py-4 bg-gray-900 text-white font-bold rounded-2xl hover:bg-gray-800 transition-all shadow-xl flex items-center justify-center gap-3">
-               <ShoppingBag size={20}/> Mulai Jualan Gratis
+             <button onClick={onLogin} className="px-8 py-4 bg-gray-900 text-white font-bold rounded-2xl hover:bg-gray-800 transition-all shadow-xl flex items-center justify-center gap-3">
+               <PlayCircle size={20}/> Coba Demo Live
              </button>
-             <button className="px-8 py-4 bg-white text-gray-700 font-bold rounded-2xl border border-gray-200 hover:border-orange-200 hover:bg-orange-50 transition-all flex items-center justify-center gap-3">
-               <PlayCircle size={20}/> Lihat Demo
-             </button>
+             <a href="https://github.com" target="_blank" rel="noreferrer" className="px-8 py-4 bg-white text-gray-700 font-bold rounded-2xl border border-gray-200 hover:border-orange-200 hover:bg-orange-50 transition-all flex items-center justify-center gap-3">
+               <Download size={20}/> Download Source
+             </a>
           </div>
           <div className="mt-8 flex items-center gap-4 text-sm text-gray-500 font-medium">
-            <div className="flex -space-x-2">
-              {[1,2,3,4].map(i => <div key={i} className={`w-8 h-8 rounded-full border-2 border-white bg-gray-200 bg-[url('https://i.pravatar.cc/100?img=${i+10}')] bg-cover`}></div>)}
-            </div>
-            <div>Dipercaya 2,000+ Seller</div>
+             <div className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-lg">
+                <Code size={14}/> <span>React + Vite</span>
+             </div>
+             <div className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-lg">
+                <Database size={14}/> <span>PHP + MySQL</span>
+             </div>
+             <div className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-lg">
+                <Zap size={14}/> <span>QiosLink QRIS</span>
+             </div>
           </div>
         </div>
         <div className="relative">
@@ -109,32 +165,78 @@ const LandingPage = ({ onLogin, onRegister }: { onLogin: ()=>void, onRegister: (
       </div>
     </section>
 
-    {/* Features */}
-    <section id="features" className="py-24 bg-gray-50">
-       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-         <div className="text-center mb-16">
-           <h2 className="text-3xl font-bold text-gray-900">Solusi Lengkap Seller Digital</h2>
-           <p className="text-gray-500 mt-4">Satu platform untuk semua jenis produk jualanmu.</p>
-         </div>
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:-translate-y-1 transition-transform">
-               <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600 mb-6"><FileText size={28}/></div>
-               <h3 className="text-xl font-bold mb-3">Produk Digital (Static)</h3>
-               <p className="text-gray-500 leading-relaxed">Jual E-book, Video Course, atau Preset. Pembeli menerima file yang sama secara instan setelah bayar.</p>
+    {/* Deployment Options */}
+    <section id="deploy" className="py-24 bg-white border-t border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16">
+                <h2 className="text-3xl font-bold text-gray-900">Pilihan Deployment Fleksibel</h2>
+                <p className="text-gray-500 mt-4">Pilih cara deploy yang sesuai dengan kebutuhan infrastruktur Anda.</p>
             </div>
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:-translate-y-1 transition-transform">
-               <div className="w-14 h-14 bg-purple-100 rounded-2xl flex items-center justify-center text-purple-600 mb-6"><Key size={28}/></div>
-               <h3 className="text-xl font-bold mb-3">License Key (Unique)</h3>
-               <p className="text-gray-500 leading-relaxed">Jual Voucher Game, Serial Number, atau Token PLN. Upload CSV, sistem kirim 1 kode unik per pembeli.</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                {/* Option 1: Demo/Local */}
+                <div className="group relative bg-white p-8 rounded-3xl border-2 border-dashed border-gray-200 hover:border-orange-500 hover:bg-orange-50/30 transition-all">
+                    <div className="absolute -top-6 left-8 bg-blue-600 text-white px-4 py-1 rounded-full text-xs font-bold shadow-lg">COCOK UNTUK TESTING</div>
+                    <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-6">
+                        <Code size={32}/>
+                    </div>
+                    <h3 className="text-2xl font-bold mb-4">Demo / Localhost</h3>
+                    <p className="text-gray-600 mb-6">
+                        Jalankan aplikasi tanpa backend PHP atau database. Data disimpan sementara di browser (Mock Data). Ideal untuk preview UI/UX atau presentasi.
+                    </p>
+                    <div className="bg-gray-900 text-gray-200 p-4 rounded-xl font-mono text-xs mb-4">
+                        <span className="text-green-400"># Gunakan env_demo.txt</span><br/>
+                        VITE_USE_DEMO_DATA=true<br/>
+                        npm run dev
+                    </div>
+                    <button onClick={onLogin} className="w-full py-3 rounded-xl border border-gray-300 font-bold text-gray-700 hover:bg-white transition-all">
+                        Coba Mode Demo Sekarang
+                    </button>
+                </div>
+
+                {/* Option 2: Production */}
+                <div className="group relative bg-white p-8 rounded-3xl border-2 border-gray-100 shadow-xl hover:border-orange-500 transition-all">
+                    <div className="absolute -top-6 left-8 bg-green-600 text-white px-4 py-1 rounded-full text-xs font-bold shadow-lg">REKOMENDASI BISNIS</div>
+                    <div className="w-16 h-16 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center mb-6">
+                        <Server size={32}/>
+                    </div>
+                    <h3 className="text-2xl font-bold mb-4">Self-Hosted / cPanel</h3>
+                    <p className="text-gray-600 mb-6">
+                        Deploy ke hosting cPanel Anda. Membutuhkan PHP & MySQL. Data tersimpan aman di database server Anda. Mendukung pembayaran QRIS real-time.
+                    </p>
+                    <div className="bg-gray-900 text-gray-200 p-4 rounded-xl font-mono text-xs mb-4">
+                         <span className="text-green-400"># Gunakan env_live.txt</span><br/>
+                         VITE_USE_DEMO_DATA=false<br/>
+                         npm run build
+                    </div>
+                    <div className="flex gap-2">
+                        <button className="flex-1 py-3 rounded-xl bg-orange-600 text-white font-bold hover:bg-orange-700 transition-all">
+                            Panduan Install
+                        </button>
+                    </div>
+                </div>
             </div>
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:-translate-y-1 transition-transform">
-               <div className="w-14 h-14 bg-orange-100 rounded-2xl flex items-center justify-center text-orange-600 mb-6"><Truck size={28}/></div>
-               <h3 className="text-xl font-bold mb-3">Produk Fisik</h3>
-               <p className="text-gray-500 leading-relaxed">Jual barang fisik dengan fitur form alamat lengkap dan cek ongkir otomatis.</p>
-            </div>
-         </div>
-       </div>
+        </div>
     </section>
+
+    {/* Footer */}
+    <footer className="bg-gray-50 py-12 border-t border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 text-center">
+            <div className="flex items-center justify-center gap-2 mb-4">
+                <ShoppingBag size={24} className="text-orange-600"/>
+                <span className="font-bold text-xl">JajananOnline</span>
+            </div>
+            <p className="text-gray-500 text-sm mb-6">
+                Proudly Open Source. Built with React, Vite, PHP, and QiosLink Engine.<br/>
+                Licensed under MIT.
+            </p>
+            <div className="flex justify-center gap-6 text-sm font-semibold text-gray-600">
+                <a href="#" className="hover:text-orange-600">GitHub</a>
+                <a href="#" className="hover:text-orange-600">Documentation</a>
+                <a href="#" className="hover:text-orange-600">Qiospay API</a>
+            </div>
+        </div>
+    </footer>
   </div>
 );
 
@@ -174,6 +276,14 @@ export default function App() {
 
   const fetchData = async () => {
     if (!user) return;
+    
+    // DEMO MODE: Load Mock Data
+    if (IS_DEMO_MODE) {
+        setProducts(MOCK_PRODUCTS);
+        setOrders(MOCK_ORDERS);
+        return;
+    }
+
     try {
       const res = await fetch(`${API_BASE}/manage_store.php?action=list&user_id=${user.id}`);
       const data = await res.json();
@@ -187,6 +297,30 @@ export default function App() {
 
   const handleAuth = async (type: 'login' | 'register') => {
     setLoading(true);
+
+    // DEMO MODE: Bypass Server Auth
+    if (IS_DEMO_MODE) {
+        setTimeout(() => {
+            if (type === 'login') {
+                const found = MOCK_USERS.find(u => u.username === authForm.username && u.password === authForm.password);
+                if (found) {
+                    const { password, ...safeUser } = found;
+                    setUser(safeUser as User);
+                    sessionStorage.setItem('jo_user', JSON.stringify(safeUser));
+                    setView('dashboard');
+                    setShowAuthModal(null);
+                } else {
+                    alert('Login Demo Gagal! Gunakan username/password yang tertera di layar.');
+                }
+            } else {
+                alert('Registrasi Demo Sukses! Silakan login dengan akun demo yang tersedia.');
+                setShowAuthModal('login');
+            }
+            setLoading(false);
+        }, 1000);
+        return;
+    }
+
     try {
       const res = await fetch(`${API_BASE}/${type}.php`, {
         method: 'POST', body: JSON.stringify(authForm)
@@ -205,12 +339,42 @@ export default function App() {
       } else {
         alert(data.message);
       }
-    } catch (e) { alert('Connection Error'); }
+    } catch (e) { alert('Connection Error. Pastikan server PHP aktif.'); }
     setLoading(false);
   };
 
   const handleSaveProduct = async () => {
     setLoading(true);
+    
+    if (IS_DEMO_MODE) {
+        setTimeout(() => {
+            const newProd: Product = {
+                id: editingProd ? editingProd.id : `mock-${Date.now()}`,
+                userId: user!.id,
+                name: prodForm.name || 'New Product',
+                price: prodForm.price || 0,
+                type: prodForm.type || 'physical',
+                description: prodForm.description || '',
+                isActive: true,
+                rating: 0,
+                ...prodForm
+            } as Product;
+            
+            if(editingProd) {
+                setProducts(products.map(p => p.id === newProd.id ? newProd : p));
+            } else {
+                setProducts([newProd, ...products]);
+            }
+            setProdModalOpen(false);
+            setEditingProd(null);
+            setProdForm({ type: 'physical' });
+            setLicenseInput('');
+            alert('Produk berhasil disimpan (Mode Demo)!');
+            setLoading(false);
+        }, 800);
+        return;
+    }
+
     try {
        // Parse licenses if type is license
        let licenses: string[] = [];
@@ -243,6 +407,10 @@ export default function App() {
   };
 
   const handleReview = async (orderId: string, productId: string, rating: number, comment: string) => {
+      if (IS_DEMO_MODE) {
+          alert("Review terkirim (Demo Mode)!");
+          return;
+      }
       setLoading(true);
       try {
           const res = await fetch(`${API_BASE}/manage_reviews.php`, {
@@ -276,12 +444,31 @@ export default function App() {
          <LandingPage onLogin={() => setShowAuthModal('login')} onRegister={() => setShowAuthModal('register')} />
          {showAuthModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-300">
+               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-300 relative">
                   <div className="p-8">
                      <div className="flex justify-between items-center mb-6">
                         <h2 className="text-2xl font-bold text-gray-900">{showAuthModal === 'login' ? 'Selamat Datang' : 'Buat Akun'}</h2>
                         <button onClick={() => setShowAuthModal(null)} className="p-2 hover:bg-gray-100 rounded-full"><X size={20}/></button>
                      </div>
+                     
+                     {/* Demo Credentials Hint */}
+                     {IS_DEMO_MODE && showAuthModal === 'login' && (
+                        <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-100 text-sm">
+                           <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2"><Info size={16}/> Akun Demo Tersedia:</h4>
+                           <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div onClick={() => setAuthForm({username:'admin', password:'admin', email:''})} className="p-2 bg-white rounded border cursor-pointer hover:border-blue-400">
+                                 <div className="font-bold">Super Admin</div>
+                                 <div className="text-gray-500">User: admin<br/>Pass: admin</div>
+                              </div>
+                              <div onClick={() => setAuthForm({username:'merchant', password:'merchant', email:''})} className="p-2 bg-white rounded border cursor-pointer hover:border-blue-400">
+                                 <div className="font-bold">Merchant</div>
+                                 <div className="text-gray-500">User: merchant<br/>Pass: merchant</div>
+                              </div>
+                           </div>
+                           <p className="mt-2 text-[10px] text-blue-600 italic text-center">Klik kotak di atas untuk auto-fill</p>
+                        </div>
+                     )}
+
                      <div className="space-y-4">
                         <input className="w-full p-4 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-orange-500" placeholder="Username" value={authForm.username} onChange={e=>setAuthForm({...authForm, username: e.target.value})} />
                         {showAuthModal === 'register' && <input className="w-full p-4 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-orange-500" placeholder="Email" type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm, email: e.target.value})} />}
@@ -323,6 +510,21 @@ export default function App() {
              ))}
           </nav>
           <div className="absolute bottom-0 w-full p-4 border-t border-gray-50">
+             {IS_DEMO_MODE ? (
+                 <div className="mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-800 flex items-start gap-2">
+                    <Info size={14} className="mt-0.5 shrink-0"/>
+                    <div>
+                        <strong>Mode Demo Aktif:</strong><br/>Data disimpan di browser, tidak terkoneksi ke database server.
+                    </div>
+                 </div>
+             ) : (
+                <div className="mb-4 p-3 bg-green-50 rounded-xl border border-green-100 text-xs text-green-800 flex items-start gap-2">
+                    <Server size={14} className="mt-0.5 shrink-0"/>
+                    <div>
+                        <strong>Mode Live:</strong><br/>Terhubung ke Server API PHP.
+                    </div>
+                 </div>
+             )}
              <button onClick={() => { setUser(null); setView('landing'); sessionStorage.removeItem('jo_user'); }} className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-xl font-medium">
                <LogOut size={20}/> Keluar
              </button>
@@ -495,39 +697,52 @@ export default function App() {
                       
                       <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
                          <h4 className="font-bold mb-4 flex items-center gap-2"><Zap size={20}/> Simulator QRIS Dinamis</h4>
-                         <div className="space-y-4">
-                            <div>
-                               <label className="block text-sm font-bold mb-1">Nominal Tes (Rp)</label>
-                               <input 
-                                 type="number" 
-                                 className="w-full p-3 border rounded-xl" 
-                                 value={testAmount}
-                                 onChange={(e) => setTestAmount(e.target.value)}
-                                 placeholder="Contoh: 15000"
-                               />
-                            </div>
-                            <button 
-                                onClick={() => {
-                                    if(user?.merchantConfig?.qrisString && testAmount) {
-                                        const qr = generateDynamicQR(user.merchantConfig.qrisString, parseInt(testAmount));
-                                        setTestQrData(qr);
-                                    } else {
-                                        alert("Pastikan QRIS String tersedia dan Nominal diisi.");
-                                    }
-                                }}
-                                className="w-full py-3 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700 shadow-lg shadow-orange-500/30 transition-all"
-                            >
-                                Generate QR Test
-                            </button>
-                            
-                            {testQrData && (
-                                <div className="mt-6 flex flex-col items-center animate-in fade-in zoom-in p-4 bg-gray-50 rounded-2xl border border-dashed border-gray-300">
-                                    <QRCodeDisplay data={testQrData} />
-                                    <p className="mt-4 text-xl font-extrabold text-gray-900">{formatRupiah(parseInt(testAmount))}</p>
-                                    <p className="text-xs text-gray-500 font-medium">Scan menggunakan E-Wallet apa saja</p>
+                         {IS_DEMO_MODE ? (
+                             <div className="space-y-4">
+                                <div className="p-3 bg-blue-50 text-blue-700 rounded-xl text-xs">
+                                    <strong>Demo Mode:</strong> QR Code di bawah ini hanya simulasi visual. Tidak bisa discan untuk pembayaran real.
                                 </div>
-                            )}
-                         </div>
+                                <div>
+                                   <label className="block text-sm font-bold mb-1">Nominal Tes (Rp)</label>
+                                   <input 
+                                     type="number" 
+                                     className="w-full p-3 border rounded-xl" 
+                                     value={testAmount}
+                                     onChange={(e) => setTestAmount(e.target.value)}
+                                     placeholder="Contoh: 15000"
+                                   />
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        if(user?.merchantConfig?.qrisString && testAmount) {
+                                            const qr = generateDynamicQR(user.merchantConfig.qrisString, parseInt(testAmount));
+                                            setTestQrData(qr);
+                                        } else {
+                                            alert("Pastikan QRIS String tersedia dan Nominal diisi.");
+                                        }
+                                    }}
+                                    className="w-full py-3 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700 shadow-lg shadow-orange-500/30 transition-all"
+                                >
+                                    Generate QR Test
+                                </button>
+                                
+                                {testQrData && (
+                                    <div className="mt-6 flex flex-col items-center animate-in fade-in zoom-in p-4 bg-gray-50 rounded-2xl border border-dashed border-gray-300">
+                                        <QRCodeDisplay data={testQrData} />
+                                        <p className="mt-4 text-xl font-extrabold text-gray-900">{formatRupiah(parseInt(testAmount))}</p>
+                                        <p className="text-xs text-gray-500 font-medium">Scan menggunakan E-Wallet apa saja</p>
+                                    </div>
+                                )}
+                             </div>
+                         ) : (
+                             <div className="text-center py-10">
+                                <Zap size={48} className="mx-auto text-gray-300 mb-4"/>
+                                <p className="text-gray-500 font-medium">
+                                    Dalam Mode Live, QRIS dibuat otomatis saat Checkout atau via API.<br/>
+                                    Gunakan menu 'Pesanan' untuk memantau transaksi masuk.
+                                </p>
+                             </div>
+                         )}
                       </div>
                    </div>
                 </div>
